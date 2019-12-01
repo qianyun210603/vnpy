@@ -12,6 +12,8 @@
 *.wpu
 .vs
 x64
+*.sln
+*.pyproj
 
 # Temp
 build
