@@ -22,7 +22,7 @@ from vnpy.gateway.bitmex import BitmexGateway
 # from vnpy.gateway.onetoken import OnetokenGateway
 # from vnpy.gateway.okexf import OkexfGateway
 # from vnpy.gateway.okexs import OkexsGateway
-# from vnpy.gateway.xtp import XtpGateway
+from vnpy.gateway.xtp import XtpGateway
 # from vnpy.gateway.hbdm import HbdmGateway
 # from vnpy.gateway.tap import TapGateway
 # from vnpy.gateway.tora import ToraGateway
@@ -62,7 +62,7 @@ def main():
     # main_engine.add_gateway(FemasGateway)
     # main_engine.add_gateway(IbGateway)
     # main_engine.add_gateway(FutuGateway)
-    main_engine.add_gateway(BitmexGateway)
+    # main_engine.add_gateway(BitmexGateway)
     # main_engine.add_gateway(TigerGateway)
     # main_engine.add_gateway(OesGateway)
     # main_engine.add_gateway(OkexGateway)
@@ -71,7 +71,7 @@ def main():
     # main_engine.add_gateway(OnetokenGateway)
     # main_engine.add_gateway(OkexfGateway)
     # main_engine.add_gateway(HbdmGateway)
-    # main_engine.add_gateway(XtpGateway)
+    main_engine.add_gateway(XtpGateway)
     # main_engine.add_gateway(TapGateway)
     # main_engine.add_gateway(ToraGateway)
     # main_engine.add_gateway(AlpacaGateway)

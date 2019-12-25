@@ -110,7 +110,9 @@ class Exchange(Enum):
     TOCOM = "TOCOM"         # Tokyo Commodity Exchange
     EUNX = "EUNX"           # Euronext Exchange
     KRX = "KRX"             # Korean Exchange
-
+    LSE = "LSE"             # London Stock Exchange
+    NYSE = "NYSE"           # New York Stock Exchange
+    NASDAQ = "NASDAQ"       # NASDAQ Stock Exchange
     OANDA = "OANDA"         # oanda.com
 
     # CryptoCurrency
