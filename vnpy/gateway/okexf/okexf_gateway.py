@@ -42,7 +42,7 @@ from vnpy.trader.object import (
     HistoryRequest
 )
 REST_HOST = "https://www.okex.com"
-WEBSOCKET_HOST = "wss://real.okex.com:10442/ws/v3"
+WEBSOCKET_HOST = "wss://real.okex.com:8443/ws/v3"
 
 STATUS_OKEXF2VT = {
     "0": Status.NOTTRADED,
@@ -370,7 +370,6 @@ class OkexfRestApi(RestClient):
 
     def on_query_account(self, data, request):
         """"""
-
         for currency, d in data["info"].items():
             account = AccountData(
                 accountid=currency.upper(),
@@ -779,7 +778,12 @@ class OkexfWebsocketApi(WebsocketClient):
         if not tick:
             return
 
-        tick.last_price = float(d["last"])
+        # Filter last price with 0 value
+        last_price = float(d["last"])
+        if not last_price:
+            return
+
+        tick.last_price = last_price
         tick.high_price = float(d["high_24h"])
         tick.low_price = float(d["low_24h"])
         tick.volume = float(d["volume_24h"])
@@ -867,10 +871,10 @@ class OkexfWebsocketApi(WebsocketClient):
             symbol=d["instrument_id"],
             exchange=Exchange.OKEX,
             direction=Direction.LONG,
-            volume=d["long_qty"],
+            volume=int(d["long_qty"]),
             frozen=float(d["long_qty"]) - float(d["long_avail_qty"]),
-            price=d["long_avg_cost"],
-            pnl=d["realised_pnl"],
+            price=float(d["long_avg_cost"]),
+            pnl=float(d["realised_pnl"]),
             gateway_name=self.gateway_name,
         )
         self.gateway.on_position(pos)
@@ -879,10 +883,10 @@ class OkexfWebsocketApi(WebsocketClient):
             symbol=d["instrument_id"],
             exchange=Exchange.OKEX,
             direction=Direction.SHORT,
-            volume=d["short_qty"],
+            volume=int(d["short_qty"]),
             frozen=float(d["short_qty"]) - float(d["short_avail_qty"]),
-            price=d["short_avg_cost"],
-            pnl=d["realised_pnl"],
+            price=float(d["short_avg_cost"]),
+            pnl=float(d["realised_pnl"]),
             gateway_name=self.gateway_name,
         )
         self.gateway.on_position(pos)
