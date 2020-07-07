@@ -147,6 +147,22 @@ def ceil_to(value: float, target: float) -> float:
     return result
 
 
+def get_digits(value: float) -> int:
+    """
+    Get number of digits after decimal point.
+    """
+    value_str = str(value)
+
+    if "e-" in value_str:
+        _, buf = value_str.split("e-")
+        return int(buf)
+    elif "." in value_str:
+        _, buf = value_str.split(".")
+        return len(buf)
+    else:
+        return 0
+
+
 class BarGenerator:
     """
     For:
@@ -187,6 +203,10 @@ class BarGenerator:
 
         # Filter tick data with 0 last price
         if not tick.last_price:
+            return
+
+        # Filter tick data with older timestamp
+        if self.last_tick and tick.datetime < self.last_tick.datetime:
             return
 
         if not self.bar:
@@ -289,11 +309,14 @@ class BarGenerator:
         """
         Generate the bar data and call callback immediately.
         """
-        self.bar.datetime = self.bar.datetime.replace(
-            second=0, microsecond=0
-        )
-        self.on_bar(self.bar)
+        bar = self.bar
+
+        if self.bar:
+            bar.datetime = bar.datetime.replace(second=0, microsecond=0)
+            self.on_bar(bar)
+
         self.bar = None
+        return bar
 
 
 class ArrayManager(object):
@@ -702,7 +725,6 @@ class ArrayManager(object):
     def aroon(
         self,
         n: int,
-        dev: float,
         array: bool = False
     ) -> Union[
         Tuple[np.ndarray, np.ndarray],

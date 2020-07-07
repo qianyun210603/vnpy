@@ -63,6 +63,7 @@ class OrderType(Enum):
     STOP = "STOP"
     FAK = "FAK"
     FOK = "FOK"
+    RFQ = "询价"
 
 
 class OptionType(Enum):
@@ -87,11 +88,19 @@ class Exchange(Enum):
     SZSE = "SZSE"           # Shenzhen Stock Exchange
     SGE = "SGE"             # Shanghai Gold Exchange
     WXE = "WXE"             # Wuxi Steel Exchange
+    CFETS = "CFETS"         # China Foreign Exchange Trade System
 
     # Global
     SMART = "SMART"         # Smart Router for US stocks
+    NYSE = "NYSE"           # New York Stock Exchnage
+    NASDAQ = "NASDAQ"       # Nasdaq Exchange
+    ARCA = "ARCA"           # ARCA Exchange
+    EDGEA = "EDGEA"         # Direct Edge Exchange
+    ISLAND = "ISLAND"       # Nasdaq Island ECN
+    BATS = "BATS"           # Bats Global Markets
+    IEX = "IEX"             # The Investors Exchange
     NYMEX = "NYMEX"         # New York Mercantile Exchange
-    COMEX = "COMEX"         # a division of theNew York Mercantile Exchange
+    COMEX = "COMEX"         # COMEX of CME
     GLOBEX = "GLOBEX"       # Globex of CME
     IDEALPRO = "IDEALPRO"   # Forex ECN of Interactive Brokers
     CME = "CME"             # Chicago Mercantile Exchange
@@ -115,6 +124,8 @@ class Exchange(Enum):
     NYSE = "NYSE"           # New York Stock Exchange
     NASDAQ = "NASDAQ"       # NASDAQ Stock Exchange
     OANDA = "OANDA"         # oanda.com
+    OTC = "OTC"             # OTC Forex Broker
+    IBKRATS = "IBKRATS"     # Paper Trading Exchange of IB
 
     # CryptoCurrency
     BITMEX = "BITMEX"

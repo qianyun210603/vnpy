@@ -125,7 +125,7 @@ class ElectronicEyeAlgo:
 
         self.put_status_event()
         self.put_trading_event()
-        self.write_log("停止定价")
+        self.write_log("停止交易")
 
         return True
 
@@ -268,7 +268,7 @@ class ElectronicEyeAlgo:
         # Calculate spread
         algo_spread = max(
             self.price_spread,
-            self.volatility_spread * option.theo_vega
+            self.volatility_spread * option.cash_vega
         )
         half_spread = algo_spread / 2
 

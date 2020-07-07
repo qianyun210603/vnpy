@@ -59,6 +59,9 @@ class SpreadAlgoTemplate:
         self.leg_traded: Dict[str, float] = defaultdict(int)
         self.leg_orders: Dict[str, List[str]] = defaultdict(list)
 
+        self.order_trade_volume: Dict[str, int] = defaultdict(int)
+        self.orders: Dict[str, OrderData] = {}
+
         self.write_log("算法已启动")
 
     def is_active(self):
@@ -100,9 +103,57 @@ class SpreadAlgoTemplate:
             )
             leg_traded = self.leg_traded[passive_symbol]
 
-            if leg_traded != leg_target:
-                finished = False
+            # For linear contract, traded volume must be no less than target volume
+            if not self.spread.is_inverse(leg.vt_symbol):
+                if leg_target > 0 and leg_traded < leg_target:
+                    finished = False
+                elif leg_target < 0 and leg_traded > leg_target:
+                    finished = False
+            # For inverse contract, the difference must be lower than min volume
+            else:
+                leg_min_volume = self.spread.calculate_leg_volume(
+                    passive_symbol, self.spread.min_volume
+                )
+
+                dif = leg_target - leg_traded
+                if leg_target > 0 and dif >= leg_min_volume:
+                    finished = False
+                elif leg_target < 0 and dif <= -leg_min_volume:
+                    finished = False
+
+            if not finished:
                 break
+
+        return finished
+
+    def check_algo_finished(self) -> bool:
+        """"""
+        finished = True
+
+        for vt_symbol, leg in self.spread.legs.items():
+            leg_traded = self.leg_traded[vt_symbol]
+
+            trading_multiplier = self.spread.trading_multipliers[vt_symbol]
+            size = self.spread.get_leg_size(vt_symbol)
+
+            if self.spread.is_inverse(vt_symbol):
+                leg_target = calculate_inverse_volume(
+                    self.target * trading_multiplier,
+                    leg.last_price,
+                    size
+                )
+                min_change = calculate_inverse_volume(
+                    leg.min_volume,
+                    leg.last_price,
+                    size
+                )
+            else:
+                leg_target = self.target * trading_multiplier
+                min_change = leg.min_volume
+
+            leg_left = leg_target - leg_traded
+            if abs(leg_left) >= min_change:
+                finished = False
 
         return finished
 
@@ -139,6 +190,25 @@ class SpreadAlgoTemplate:
         else:
             self.leg_traded[trade.vt_symbol] -= trade_volume
 
+        self.calculate_traded()
+
+        # Sum up total traded volume of each order,
+        self.order_trade_volume[trade.vt_orderid] += trade.volume
+
+        # Remove order from active list if all volume traded
+        order = self.orders[trade.vt_orderid]
+        contract = self.get_contract(trade.vt_symbol)
+
+        trade_volume = round_to(
+            self.order_trade_volume[order.vt_orderid],
+            contract.min_volume
+        )
+
+        if trade_volume == order.volume:
+            vt_orderids = self.leg_orders[order.vt_symbol]
+            if order.vt_orderid in vt_orderids:
+                vt_orderids.remove(order.vt_orderid)
+
         msg = "委托成交，{}，{}，{}@{}".format(
             trade.vt_symbol,
             trade.direction,
@@ -147,14 +217,15 @@ class SpreadAlgoTemplate:
         )
         self.write_log(msg)
 
-        self.calculate_traded()
         self.put_event()
-
         self.on_trade(trade)
 
     def update_order(self, order: OrderData):
         """"""
-        if not order.is_active():
+        self.orders[order.vt_orderid] = order
+
+        # Remove order from active list if rejected or cancelled
+        if order.status in {Status.REJECTED, Status.CANCELLED}:
             vt_orderids = self.leg_orders[order.vt_symbol]
             if order.vt_orderid in vt_orderids:
                 vt_orderids.remove(order.vt_orderid)
@@ -209,6 +280,23 @@ class SpreadAlgoTemplate:
         leg = self.spread.legs[vt_symbol]
         volume = round_to(volume, leg.min_volume)
 
+        # If new order volume is 0, then check if algo finished
+        if not volume:
+            finished = self.check_algo_finished()
+
+            if finished:
+                self.status = Status.ALLTRADED
+                self.put_event()
+
+                msg = "各腿剩余数量均不足最小下单量，算法执行结束"
+                self.write_log(msg)
+
+            return
+
+        # Round order price to pricetick of contract
+        price = round_to(price, leg.pricetick)
+
+        # Otherwise send order
         vt_orderids = self.algo_engine.send_order(
             self,
             vt_symbol,
@@ -270,7 +358,9 @@ class SpreadAlgoTemplate:
 
         self.traded_volume = abs(self.traded)
 
-        if self.traded == self.target:
+        if self.target > 0 and self.traded >= self.target:
+            self.status = Status.ALLTRADED
+        elif self.target < 0 and self.traded <= self.target:
             self.status = Status.ALLTRADED
         elif not self.traded:
             self.status = Status.NOTTRADED
