@@ -47,10 +47,10 @@ from vnpy_ctp import CtpGateway
 # from vnpy_tts import TtsGateway
 # from vnpy.gateway.alpaca import AlpacaGateway
 
-# from vnpy_ctastrategy import CtaStrategyApp
-# from vnpy_ctabacktester import CtaBacktesterApp
-# from vnpy_spreadtrading import SpreadTradingApp
-# from vnpy.app.algo_trading import AlgoTradingApp
+from vnpy_ctastrategy import CtaStrategyApp
+from vnpy_ctabacktester import CtaBacktesterApp
+from vnpy_spreadtrading import SpreadTradingApp
+from vnpy.app.algo_trading import AlgoTradingApp
 # from vnpy.app.option_master import OptionMasterApp
 # from vnpy.app.portfolio_strategy import PortfolioStrategyApp
 # from vnpy.app.script_trader import ScriptTraderApp
@@ -58,7 +58,7 @@ from vnpy_ctp import CtpGateway
 # from vnpy_chartwizard import ChartWizardApp
 # from vnpy.app.rpc_service import RpcServiceApp
 # from vnpy.app.excel_rtd import ExcelRtdApp
-# from vnpy_datamanager import DataManagerApp
+from vnpy_datamanager import DataManagerApp
 # from vnpy_datarecorder import DataRecorderApp
 # from vnpy_riskmanager import RiskManagerApp
 # from vnpy_webtrader import WebTraderApp
@@ -117,10 +117,10 @@ def main():
     # main_engine.add_gateway(TtsGateway)
     # main_engine.add_gateway(AlpacaGateway)
 
-    # main_engine.add_app(CtaStrategyApp)
-    # main_engine.add_app(CtaBacktesterApp)
-    # main_engine.add_app(SpreadTradingApp)
-    # main_engine.add_app(AlgoTradingApp)
+    main_engine.add_app(CtaStrategyApp)
+    main_engine.add_app(CtaBacktesterApp)
+    main_engine.add_app(SpreadTradingApp)
+    main_engine.add_app(AlgoTradingApp)
     # main_engine.add_app(OptionMasterApp)
     # main_engine.add_app(PortfolioStrategyApp)
     # main_engine.add_app(ScriptTraderApp)
@@ -128,7 +128,7 @@ def main():
     # main_engine.add_app(ChartWizardApp)
     # main_engine.add_app(RpcServiceApp)
     # main_engine.add_app(ExcelRtdApp)
-    # main_engine.add_app(DataManagerApp)
+    main_engine.add_app(DataManagerApp)
     # main_engine.add_app(DataRecorderApp)
     # main_engine.add_app(RiskManagerApp)
     # main_engine.add_app(WebTraderApp)
