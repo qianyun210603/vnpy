@@ -542,9 +542,8 @@ class BacktestingEngine:
 
             # Check whether limit orders can be filled.
             long_cross = (
-                order.direction == Direction.LONG
-                and order.price >= long_cross_price
-                and long_cross_price > 0
+                    order.direction == Direction.LONG
+                    and order.price >= long_cross_price > 0
             )
 
             short_cross = (
