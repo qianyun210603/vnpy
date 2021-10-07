@@ -14,10 +14,11 @@ class BackwardationRollingStrategy(StrategyTemplate):
     """"""
 
     author = "Booksword"
-
+    price_add = 1
     band_floor = 3
     boll_window = 480
     boll_dev = 2
+    target_position = 0
 
     current_spread = 0.0
     boll_mid = 0.0
@@ -28,6 +29,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         "band_floor",
         "boll_window",
         "boll_dev",
+        "target_position"
     ]
     variables = [
         "boll_mid",
@@ -87,7 +89,6 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
     def on_day_open(self, today) -> None:
 
-        df = self.contract_info
         raw = self.contract_info[
                 (self.contract_info.start_date <= today) &
                 (self.contract_info.end_date + pd.Timedelta(hours=23) >= today)
@@ -103,7 +104,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 params = {
                     'mean': mean,
                     'std': std,
-                    'bandwidth': max(self.boll_dev * std, self.band_floor)
+                    'bandwidth': max(std, self.band_floor)
                 }
                 self.bounds[(i, j)] = params
                 print(today, (i, j), str(params))
@@ -146,15 +147,41 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 self.spread_datas[(i, j)][-1] = current_spread
                 # print(f"{bars[si].datetime.isoformat()} spread btw {si} and {sj} is {current_spread:.02f}")
 
+        total_pos = 0
+        days_to_expiry_for_0 = (self.expiries[0] - bars[self.vt_symbols_today[0]].datetime).days
+        expiry_penalty_factor = np.exp(0.3* (5 - min(5, days_to_expiry_for_0)))
         for idx, vt_symbol in enumerate(self.vt_symbols_today):
             current_pos_this_symbol = self.get_pos(vt_symbol)
+            total_pos += current_pos_this_symbol
             if current_pos_this_symbol > 0:
                 tick_sprds = [bars[s].close_price - bars[vt_symbol].close_price for s in self.vt_symbols_today]
-                normalized = [(ts-self.bounds[(s, idx)]['mean'])/self.bounds[(i, j)]['bandwidth'] for ]
+                normalized = np.array([(ts-self.bounds[(s, idx)]['mean'])/self.bounds[(s, idx)]['bandwidth']
+                              for s, ts in enumerate(tick_sprds)])
+                if idx == 0 and days_to_expiry_for_0 < 2:
+                    argmin = np.argmin(normalized[1:]) + 1
+                else:
+                    normalized[0] /= expiry_penalty_factor
+                    argmin = np.argmin(normalized)
+                print(normalized, argmin)
+                if argmin == idx:
+                    continue
+
+                if normalized[argmin] < -self.boll_dev:
+                    target_price = self.bounds[(argmin, idx)]['mean'] -  self.bounds[(argmin, idx)]['bandwidth'] * \
+                                   self.boll_dev * (expiry_penalty_factor if argmin == 0 else 1)
+                    self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+                    self.sell(vt_symbol, bars[vt_symbol].close_price - self.price_add, current_pos_this_symbol)
 
 
+
+        if total_pos < self.target_position:
+            self.buy(
+                self.vt_symbols_today[1], bars[self.vt_symbols_today[1]].close_price + self.price_add,
+                volume=self.target_position-total_pos
+            )
 
         self.put_event()
+
 
 
 def get_contract_info(und_symbol):
