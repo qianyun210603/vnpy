@@ -488,6 +488,8 @@ class BacktestingEngine:
 
     def new_bars(self, dt: datetime) -> None:
         """"""
+        if self.datetime is None or self.datetime.day != dt.day:
+            self.strategy.on_day_open(dt)
         self.datetime = dt
 
         bars: Dict[str, BarData] = {}

@@ -66,7 +66,7 @@ if __name__ == '__main__':
         symbol, exch_str = jq_symbol.split('.')
         exch = EXCH_MAPPING[exch_str]
         assert exch == Exchange.CFFEX, "Only checked for CFFEX for now"
-        df = get_prices(jq_symbol, row.start_date, row.end_date)
+        df = get_prices(jq_symbol, row.start_date, row.end_date+pd.Timedelta(hours=23))
         if not df.empty:
             bar_lists = [
                 # noinspection PyTypeChecker

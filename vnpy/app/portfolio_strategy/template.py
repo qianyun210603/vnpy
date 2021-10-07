@@ -263,3 +263,6 @@ class StrategyTemplate(ABC):
         """
         if self.trading:
             self.strategy_engine.sync_strategy_data(self)
+
+    def on_day_open(self, today) -> None:
+        pass
