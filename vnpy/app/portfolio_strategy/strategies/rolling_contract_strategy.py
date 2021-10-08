@@ -1,3 +1,6 @@
+import os
+import os.path
+import pickle
 import pandas as pd
 from jqdatasdk import auth, is_auth, get_all_securities
 from typing import List, Dict, Optional, Tuple
@@ -7,14 +10,14 @@ import numpy as np
 
 from vnpy.app.portfolio_strategy import StrategyTemplate, StrategyEngine
 from vnpy.trader.utility import BarGenerator
-from vnpy.trader.object import TickData, BarData
+from vnpy.trader.object import TickData, BarData, TradeData
 
 
 class BackwardationRollingStrategy(StrategyTemplate):
     """"""
 
     author = "Booksword"
-    price_add = 1
+    price_add = 5
     band_floor = 3
     boll_window = 480
     boll_dev = 2
@@ -50,19 +53,21 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self.bgs: Dict[str, BarGenerator] = {}
         self.targets: Dict[str, int] = {}
         self.last_tick_time: Optional[datetime] = None
+        self.underlying_symbol = vt_symbols[0][:2]
 
         self.spread_count: int = 0
         self.contracts_same_day = 4
         self.spread_datas: Dict[Tuple[int, int], np.array] = {
             (i, j): np.zeros(self.boll_window) for i in range(self.contracts_same_day)
-            for j in range(i+1, self.contracts_same_day)
+            for j in range(self.contracts_same_day)
         }
         self.bounds: Dict[Tuple[int, int], Dict] = {}
 
         self.parameter_date: Optional[datetime] = None
 
         self.symbol_mapping: Dict[str, str] = {}
-        self.contract_info = get_contract_info('IF')
+        self.contract_info = None
+        self._load_auxiliary_data()
         self.vt_symbols_today: List[str] = []
         self.expiries: List[datetime] = []
 
@@ -74,18 +79,44 @@ class BackwardationRollingStrategy(StrategyTemplate):
             self.targets[vt_symbol] = 0
             self.bgs[vt_symbol] = BarGenerator(on_bar)
 
+    def _load_auxiliary_data(self):
+        cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.__class__.__name__)
+        os.makedirs(cache_path, exist_ok=True)
+        contract_list_path = os.path.join(cache_path, 'contract.bin')
+        contract_list = None
+        if os.path.exists(contract_list_path):
+            with open(contract_list_path, "rb") as f:
+                contract_records = pickle.load(f)
+            record_date = contract_records['date']
+            contract_list = pd.DataFrame(contract_records['records'])
+            if not contract_list[
+                (contract_list.end_date>=record_date)&(contract_list.end_date<=pd.Timestamp.now())].empty:
+                contract_list = None
+        if contract_list is None:
+            if not is_auth():
+                auth("13842586876", "Jqdata06284015")
+            contract_list = get_all_securities(types=['futures'], date=None)
+            contract_records = {'date': datetime.today(), 'records': contract_list.to_dict()}
+            with open(contract_list_path, "wb") as f:
+                pickle.dump(contract_records, f)
+        my_contracts = contract_list[contract_list.name.str.startswith(self.underlying_symbol)].copy()
+        my_contracts.start_date = my_contracts.start_date.dt.tz_localize('Asia/Shanghai')
+        my_contracts.end_date = my_contracts.end_date.dt.tz_localize('Asia/Shanghai')
+        self.contract_info = my_contracts.set_index('name').drop(['IF8888', 'IF9999'])
+
     def on_init(self):
         """
         Callback when strategy is inited.
         """
         self.write_log("策略初始化")
+        self.load_bars(5)
 
     def on_start(self):
         """
         Callback when strategy is started.
         """
         self.write_log("策略启动")
-        self.load_bars(5)
+
 
     def on_day_open(self, today) -> None:
 
@@ -95,8 +126,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
             ].sort_values(by='end_date').index.to_list()
         self.vt_symbols_today = [x + '.CFFEX' for x in raw]
         self.expiries = [x.to_pydatetime() for x in self.contract_info.loc[raw, 'end_date']]
-        print(self.vt_symbols_today)
-        print([(x - today.replace(hour=0, minute=0, second=0)).days for x in self.expiries])
+        #print(self.vt_symbols_today)
+        #print([(x - today.replace(hour=0, minute=0, second=0)).days for x in self.expiries])
         for i in range(self.contracts_same_day):
             for j in range(self.contracts_same_day):
                 std = self.spread_datas[(i, j)].std()
@@ -107,7 +138,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
                     'bandwidth': max(std, self.band_floor)
                 }
                 self.bounds[(i, j)] = params
-                print(today, (i, j), str(params))
+                # print(today, (i, j), str(params))
+        #print(today, self.bounds[(1, 2)])
 
 
     def on_stop(self):
@@ -145,11 +177,18 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 current_spread = bars[si].close_price - bars[sj].close_price
                 self.spread_datas[(i, j)][:-1] = self.spread_datas[(i, j)][1:]
                 self.spread_datas[(i, j)][-1] = current_spread
+
                 # print(f"{bars[si].datetime.isoformat()} spread btw {si} and {sj} is {current_spread:.02f}")
+        # print(f"{bars[self.vt_symbols_today[0]].datetime} -", self.spread_datas[(1, 2)])
 
         total_pos = 0
         days_to_expiry_for_0 = (self.expiries[0] - bars[self.vt_symbols_today[0]].datetime).days
         expiry_penalty_factor = np.exp(0.3* (5 - min(5, days_to_expiry_for_0)))
+        holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
+        total = sum(holdings)
+        #print(f"{bars[self.vt_symbols_today[0]].datetime} - holdings: {str(holdings)}, total: {total}")
+        if total > self.target_position:
+            print(f"{bars[self.vt_symbols_today[0]].datetime} - holdings: {str(holdings)}, total: {total}")
         for idx, vt_symbol in enumerate(self.vt_symbols_today):
             current_pos_this_symbol = self.get_pos(vt_symbol)
             total_pos += current_pos_this_symbol
@@ -162,17 +201,22 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 else:
                     normalized[0] /= expiry_penalty_factor
                     argmin = np.argmin(normalized)
-                print(normalized, argmin)
+
                 if argmin == idx:
                     continue
 
                 if normalized[argmin] < -self.boll_dev:
-                    target_price = self.bounds[(argmin, idx)]['mean'] -  self.bounds[(argmin, idx)]['bandwidth'] * \
+                    # print(bars[self.vt_symbols_today[0]].datetime.isoformat(), normalized, argmin)
+                    target_price = bars[vt_symbol].close_price - self.bounds[(idx, argmin)]['mean'] - \
+                                   self.bounds[(argmin, idx)]['bandwidth'] * \
                                    self.boll_dev * (expiry_penalty_factor if argmin == 0 else 1)
+
                     self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
-                    self.sell(vt_symbol, bars[vt_symbol].close_price - self.price_add, current_pos_this_symbol)
-
-
+                    close_price = bars[vt_symbol].close_price - self.price_add
+                    self.sell(vt_symbol, close_price, current_pos_this_symbol)
+                    print(f"{bars[vt_symbol].datetime.isoformat()} - switch from idx {idx} "
+                          f"({vt_symbol}) @{close_price:.2f} to idx"
+                          f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
 
         if total_pos < self.target_position:
             self.buy(
@@ -182,13 +226,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         self.put_event()
 
+    def update_trade(self, trade: TradeData) -> None:
+        super(BackwardationRollingStrategy, self).update_trade(trade)
+        print(trade)
 
-
-def get_contract_info(und_symbol):
-    if not is_auth():
-        auth("13842586876", "Jqdata06284015")
-    all_future_contract = get_all_securities(types=['futures'], date=None)
-    my_contracts = all_future_contract[all_future_contract.name.str.startswith(und_symbol)].copy()
-    my_contracts.start_date = my_contracts.start_date.dt.tz_localize('Asia/Shanghai')
-    my_contracts.end_date = my_contracts.end_date.dt.tz_localize('Asia/Shanghai')
-    return my_contracts.set_index('name').drop(['IF8888', 'IF9999'])

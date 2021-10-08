@@ -24,8 +24,11 @@ if __name__ == '__main__':
 
     setting = {
         "boll_window": 480,
-        "boll_dev": 1,
+        "boll_dev": 2,
+        "target_position": 1
     }
     engine.add_strategy(BackwardationRollingStrategy, setting)
     engine.load_data()
     engine.run_backtesting()
+    df = engine.calculate_result()
+    engine.calculate_statistics()
