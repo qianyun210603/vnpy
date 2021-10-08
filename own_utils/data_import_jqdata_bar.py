@@ -59,6 +59,7 @@ if __name__ == '__main__':
     my_contracts = all_future_contract[
         all_future_contract.name.str.startswith('IF') | all_future_contract.name.str.startswith(
             'IH') | all_future_contract.name.str.startswith('IC')]
+    time_shift = pd.Timedelta('1min')
     for jq_symbol, row in my_contracts.iterrows():
         # noinspection PyTypeChecker
         if row.end_date < pd.Timestamp("2019-01-01"):
@@ -73,7 +74,7 @@ if __name__ == '__main__':
                 BarData(
                     symbol=symbol,
                     exchange=exch,
-                    datetime=dt.to_pydatetime(),
+                    datetime=(dt - time_shift).to_pydatetime(),
                     interval=Interval.MINUTE,
                     volume=row.volume,
                     open_interest=row.open_interest,

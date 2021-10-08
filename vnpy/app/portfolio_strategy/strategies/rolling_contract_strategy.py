@@ -10,14 +10,14 @@ import numpy as np
 
 from vnpy.app.portfolio_strategy import StrategyTemplate, StrategyEngine
 from vnpy.trader.utility import BarGenerator
-from vnpy.trader.object import TickData, BarData, TradeData
+from vnpy.trader.object import TickData, BarData, TradeData, OrderData
 
 
 class BackwardationRollingStrategy(StrategyTemplate):
     """"""
 
     author = "Booksword"
-    price_add = 5
+    price_add = 25
     band_floor = 3
     boll_window = 480
     boll_dev = 2
@@ -70,6 +70,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self._load_auxiliary_data()
         self.vt_symbols_today: List[str] = []
         self.expiries: List[datetime] = []
+
+        self.switches = {}
 
         def on_bar(bar: BarData):
             """"""
@@ -186,7 +188,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         expiry_penalty_factor = np.exp(0.3* (5 - min(5, days_to_expiry_for_0)))
         holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
         total = sum(holdings)
-        #print(f"{bars[self.vt_symbols_today[0]].datetime} - holdings: {str(holdings)}, total: {total}")
+        # print(f"{bars[self.vt_symbols_today[0]].datetime} - holdings: {str(holdings)}, total: {total}")
         if total > self.target_position:
             print(f"{bars[self.vt_symbols_today[0]].datetime} - holdings: {str(holdings)}, total: {total}")
         for idx, vt_symbol in enumerate(self.vt_symbols_today):
@@ -213,12 +215,14 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
                     self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
                     close_price = bars[vt_symbol].close_price - self.price_add
-                    self.sell(vt_symbol, close_price, current_pos_this_symbol)
+                    self.switches.update({self.vt_symbols_today[argmin]: (vt_symbol, close_price)})
+                    # self.sell(vt_symbol, close_price, current_pos_this_symbol)
                     print(f"{bars[vt_symbol].datetime.isoformat()} - switch from idx {idx} "
                           f"({vt_symbol}) @{close_price:.2f} to idx"
                           f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
 
         if total_pos < self.target_position:
+            print("additional buy")
             self.buy(
                 self.vt_symbols_today[1], bars[self.vt_symbols_today[1]].close_price + self.price_add,
                 volume=self.target_position-total_pos
@@ -226,7 +230,13 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         self.put_event()
 
+    def update_order(self, order: OrderData) -> None:
+        super(BackwardationRollingStrategy, self).update_order(order)
+        print(order)
+
     def update_trade(self, trade: TradeData) -> None:
         super(BackwardationRollingStrategy, self).update_trade(trade)
         print(trade)
-
+        if trade.vt_symbol in self.switches:
+            vt_symbol, close_price = self.switches.pop(trade.vt_symbol)
+            self.sell(vt_symbol, close_price, trade.volume)
