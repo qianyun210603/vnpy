@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, OrderedDict, deque
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Set, Tuple
 from functools import lru_cache
@@ -55,7 +55,8 @@ class BacktestingEngine:
 
         self.limit_order_count = 0
         self.limit_orders = {}
-        self.active_limit_orders = {}
+        self.active_limit_orders = OrderedDict()
+        self.limit_order_process_queue = deque()
 
         self.trade_count = 0
         self.trades = {}
@@ -520,6 +521,7 @@ class BacktestingEngine:
                 self.bars[vt_symbol] = bar
 
         self.cross_limit_order()
+        self.limit_order_process_queue.extend(self.active_limit_orders)
         self.strategy.on_bars(bars)
 
         if self.strategy.inited:
@@ -529,7 +531,10 @@ class BacktestingEngine:
         """
         Cross limit order with last bar/tick data.
         """
-        for order in list(self.active_limit_orders.values()):
+        while bool(self.limit_order_process_queue):
+            order = self.active_limit_orders.get(self.limit_order_process_queue.popleft(), None)
+            if order is None:
+                print("Dont Know why this is in queue")
             bar = self.bars[order.vt_symbol]
 
             long_cross_price = bar.low_price
@@ -628,6 +633,7 @@ class BacktestingEngine:
         )
 
         self.active_limit_orders[order.vt_orderid] = order
+        self.limit_order_process_queue.append(order.vt_orderid)
         self.limit_orders[order.vt_orderid] = order
 
         return [order.vt_orderid]
@@ -639,6 +645,8 @@ class BacktestingEngine:
         if vt_orderid not in self.active_limit_orders:
             return
         order = self.active_limit_orders.pop(vt_orderid)
+        if vt_orderid in self.limit_order_process_queue:
+            self.limit_order_process_queue.remove(vt_orderid)
 
         order.status = Status.CANCELLED
         self.strategy.update_order(order)

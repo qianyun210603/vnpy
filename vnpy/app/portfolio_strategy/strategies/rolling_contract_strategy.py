@@ -111,7 +111,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         Callback when strategy is inited.
         """
         self.write_log("策略初始化")
-        self.load_bars(5)
+        self.load_bars(3)
 
     def on_start(self):
         """
@@ -180,17 +180,14 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 self.spread_datas[(i, j)][:-1] = self.spread_datas[(i, j)][1:]
                 self.spread_datas[(i, j)][-1] = current_spread
 
-                # print(f"{bars[si].datetime.isoformat()} spread btw {si} and {sj} is {current_spread:.02f}")
-        # print(f"{bars[self.vt_symbols_today[0]].datetime} -", self.spread_datas[(1, 2)])
-
         total_pos = 0
         days_to_expiry_for_0 = (self.expiries[0] - bars[self.vt_symbols_today[0]].datetime).days
         expiry_penalty_factor = np.exp(0.3* (5 - min(5, days_to_expiry_for_0)))
-        holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
-        total = sum(holdings)
+        # holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
+        # total = sum(holdings)
         # print(f"{bars[self.vt_symbols_today[0]].datetime} - holdings: {str(holdings)}, total: {total}")
-        if total > self.target_position:
-            print(f"{bars[self.vt_symbols_today[0]].datetime} - holdings: {str(holdings)}, total: {total}")
+        # if total > self.target_position:
+        # print(f"{bars[self.vt_symbols_today[0]].datetime} - before order holdings: {str(holdings)}, total: {total}")
         for idx, vt_symbol in enumerate(self.vt_symbols_today):
             current_pos_this_symbol = self.get_pos(vt_symbol)
             total_pos += current_pos_this_symbol
@@ -220,9 +217,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
                     print(f"{bars[vt_symbol].datetime.isoformat()} - switch from idx {idx} "
                           f"({vt_symbol}) @{close_price:.2f} to idx"
                           f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
-
         if total_pos < self.target_position:
-            print("additional buy")
+            print(f"{bars[vt_symbol].datetime.isoformat()} - additional buy")
             self.buy(
                 self.vt_symbols_today[1], bars[self.vt_symbols_today[1]].close_price + self.price_add,
                 volume=self.target_position-total_pos
