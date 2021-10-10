@@ -1,6 +1,7 @@
+from enum import Enum
 from collections import defaultdict, OrderedDict, deque
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Set, Tuple, Optional
+from typing import Dict, List, Set, Optional, Union
 from functools import lru_cache
 from copy import copy
 import traceback
@@ -10,9 +11,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pandas import DataFrame
 
-from vnpy.trader.constant import Direction, Offset, Interval, Status
+from vnpy.trader.constant import Direction, Offset, Interval, Status, Exchange
 from vnpy.trader.database import get_database
-from vnpy.trader.object import OrderData, TradeData, BarData
+from vnpy.trader.object import OrderData, TradeData, BarData, TickData
 from vnpy.trader.utility import round_to, extract_vt_symbol
 
 from .template import StrategyTemplate
@@ -25,6 +26,11 @@ INTERVAL_DELTA_MAP = {
 }
 
 
+class BacktestingMode(Enum):
+    BAR = 1
+    TICK = 2
+
+
 class BacktestingEngine:
     """"""
 
@@ -35,6 +41,8 @@ class BacktestingEngine:
         self.vt_symbols: List[str] = []
         self.start: Optional[datetime] = None
         self.end: Optional[datetime] = None
+
+        self.intervals: Dict[str, Interval] = {}
 
         self.rates: Dict[str, float] = {}
         self.slippages: Dict[str, float] = {}
@@ -50,7 +58,7 @@ class BacktestingEngine:
 
         self.interval: Optional[Interval] = None
         self.days: int = 0
-        self.history_data: Dict[Tuple, BarData] = {}
+        self.history_data: Dict[datetime, Dict[str, Union[TickData, BarData]]] = {}
         self.dts: Set[datetime] = set()
 
         self.limit_order_count = 0
@@ -63,7 +71,7 @@ class BacktestingEngine:
 
         self.logs = []
 
-        self.daily_results = {}
+        self.daily_results: Dict[date, PortfolioDailyResult] = {}
         self.daily_df = None
 
     def clear_data(self) -> None:
@@ -142,21 +150,31 @@ class BacktestingEngine:
             start = self.start
             end = self.start + progress_delta
             progress = 0
+            symbol, exchange = extract_vt_symbol(vt_symbol)
 
             data_count = 0
             while start < self.end:
                 end = min(end, self.end)  # Make sure end time stays within set range
 
-                data = load_bar_data(
-                    vt_symbol,
-                    self.interval,
-                    start,
-                    end
-                )
+                if self.intervals.get(vt_symbol, self.interval) != Interval.TICK:
+                    data = load_bar_data(
+                        symbol,
+                        exchange,
+                        self.interval,
+                        start,
+                        end
+                    )
+                else:
+                    data = load_tick_data(
+                        symbol,
+                        exchange,
+                        start,
+                        end
+                    )
 
-                for bar in data:
-                    self.dts.add(bar.datetime)
-                    self.history_data[(bar.datetime, vt_symbol)] = bar
+                for d in data:
+                    # self.dts.add(bar.datetime)
+                    self.history_data.setdefault(d.datetime, {})[vt_symbol] = d
                     data_count += 1
 
                 progress += progress_delta / total_delta
@@ -176,7 +194,7 @@ class BacktestingEngine:
         self.strategy.on_init()
 
         # Generate sorted datetime list
-        dts = sorted(self.dts)
+        dts = sorted(self.history_data)
 
         # Use the first [days] of history data for initializing strategy
         day_count = 0
@@ -189,7 +207,7 @@ class BacktestingEngine:
                     break
 
             try:
-                self.new_bars(dt)
+                self.new_data(dt)
             except Exception:
                 self.output("触发异常，回测终止")
                 self.output(traceback.format_exc())
@@ -205,7 +223,7 @@ class BacktestingEngine:
         # Use the rest of history data for running backtesting
         for dt in dts[ix:]:
             try:
-                self.new_bars(dt)
+                self.new_data(dt)
             except Exception:
                 self.output("触发异常，回测终止")
                 self.output(traceback.format_exc())
@@ -475,75 +493,65 @@ class BacktestingEngine:
         fig.update_layout(height=1000, width=1000)
         fig.show()
 
-    def update_daily_close(self, bars: Dict[str, BarData], dt: datetime) -> None:
+    def update_daily_close(self, dt: datetime, vt_symbol: str, price: float) -> None:
         """"""
         d = dt.date()
 
-        close_prices = {}
-        for bar in bars.values():
-            close_prices[bar.vt_symbol] = bar.close_price
+        # close_prices = {}
+        # for bar in bars.values():
+        #     close_prices[bar.vt_symbol] = bar.close_price
 
-        daily_result = self.daily_results.get(d, None)
+        if d not in self.daily_results:
+            self.daily_results[d] = PortfolioDailyResult(d)
 
-        if daily_result:
-            daily_result.update_close_prices(close_prices)
-        else:
-            self.daily_results[d] = PortfolioDailyResult(d, close_prices)
+        self.daily_results[d].update_close_price(vt_symbol, price)
 
-    def new_bars(self, dt: datetime) -> None:
+
+    def new_data(self, dt: datetime) -> None:
         """"""
         if self.datetime is None or self.datetime.day != dt.day:
             self.strategy.on_day_open(dt)
         self.datetime = dt
 
-        bars: Dict[str, BarData] = {}
-        for vt_symbol in self.vt_symbols:
-            bar = self.history_data.get((dt, vt_symbol), None)
+        for vt_symbol in self.history_data[dt]:
+            self.strategy.update_latest_data(self.history_data[dt][vt_symbol])
 
-            # If bar data of vt_symbol at dt exists
-            if bar:
-                # Update bar data for crossing order
-                self.bars[vt_symbol] = bar
+        self.cross_limit_order(dt)
+        self.limit_order_process_queue.extend(set(self.active_limit_orders).intersection(self.history_data[dt]))
+        for vt_symbol, mkt_data in self.history_data[dt].items():
+            if self.intervals.get(vt_symbol, self.interval) == Interval.TICK:
+                self.strategy.on_tick(mkt_data)
+                if self.strategy.inited:
+                    self.update_daily_close(dt, vt_symbol, mkt_data.last_price)
+            else:
+                self.strategy.on_bar(mkt_data)
+                if self.strategy.inited:
+                    self.update_daily_close(dt, vt_symbol, mkt_data.close_price)
 
-                # Put bar into dict for strategy.on_bars update
-                bars[vt_symbol] = bar
-            # Otherwise, use previous close to backfill
-            elif vt_symbol in self.bars:
-                old_bar = self.bars[vt_symbol]
-
-                bar = BarData(
-                    symbol=old_bar.symbol,
-                    exchange=old_bar.exchange,
-                    datetime=dt,
-                    open_price=old_bar.close_price,
-                    high_price=old_bar.close_price,
-                    low_price=old_bar.close_price,
-                    close_price=old_bar.close_price,
-                    gateway_name=old_bar.gateway_name
-                )
-                self.bars[vt_symbol] = bar
-
-        self.cross_limit_order()
-        self.limit_order_process_queue.extend(self.active_limit_orders)
-        self.strategy.on_bars(bars)
-
-        if self.strategy.inited:
-            self.update_daily_close(self.bars, dt)
-
-    def cross_limit_order(self) -> None:
+    def cross_limit_order(self, dt) -> None:
         """
         Cross limit order with last bar/tick data.
         """
         while bool(self.limit_order_process_queue):
-            order = self.active_limit_orders.get(self.limit_order_process_queue.popleft(), None)
+            order: OrderData = self.active_limit_orders.get(self.limit_order_process_queue.popleft(), None)
             if order is None:
                 print("Dont Know why this is in queue")
-            bar = self.bars[order.vt_symbol]
+            if not order.vt_symbol in self.history_data[dt]:
+                continue
+            mk_data = self.history_data[dt][order.vt_symbol]
 
-            long_cross_price = bar.low_price
-            short_cross_price = bar.high_price
-            long_best_price = bar.open_price
-            short_best_price = bar.open_price
+            if self.intervals.get(order.vt_symbol, self.interval) != Interval.TICK:
+                long_cross_price = mk_data.low_price
+                short_cross_price = mk_data.high_price
+                long_best_price = mk_data.open_price
+                short_best_price = mk_data.open_price
+            else:
+                if np.isnan(mk_data.last_price):
+                    mk_data.last_price = (mk_data.bid_price_1 + mk_data.ask_price_1) / 2
+                long_cross_price = mk_data.ask_price_1
+                short_cross_price = mk_data.bid_price_1
+                long_best_price = max(mk_data.ask_price_1, mk_data.last_price)
+                short_best_price = min(mk_data.bid_price_1, mk_data.last_price)
 
             # Push order update with status "not traded" (pending).
             if order.status == Status.SUBMITTING:
@@ -636,7 +644,8 @@ class BacktestingEngine:
         )
 
         self.active_limit_orders[order.vt_orderid] = order
-        self.limit_order_process_queue.append(order.vt_orderid)
+        if self.intervals.get(order.vt_symbol, self.interval) != Interval.TICK:
+            self.limit_order_process_queue.append(order.vt_orderid)
         self.limit_orders[order.vt_orderid] = order
 
         return [order.vt_orderid]
@@ -790,18 +799,15 @@ class ContractDailyResult:
 class PortfolioDailyResult:
     """"""
 
-    def __init__(self, result_date: date, close_prices: Dict[str, float]):
+    def __init__(self, result_date: date):
         """"""
         self.date: date = result_date
-        self.close_prices: Dict[str, float] = close_prices
+        self.close_prices: Dict[str, float] = {}
         self.pre_closes: Dict[str, float] = {}
         self.start_poses: Dict[str, float] = {}
         self.end_poses: Dict[str, float] = {}
 
         self.contract_results: Dict[str, ContractDailyResult] = {}
-
-        for vt_symbol, close_price in close_prices.items():
-            self.contract_results[vt_symbol] = ContractDailyResult(result_date, close_price)
 
         self.trade_count: int = 0
         self.turnover: float = 0
@@ -848,28 +854,39 @@ class PortfolioDailyResult:
 
             self.end_poses[vt_symbol] = contract_result.end_pos
 
-    def update_close_prices(self, close_prices: Dict[str, float]) -> None:
+    def update_close_price(self, vt_symbol: str, price: float) -> None:
         """"""
-        self.close_prices = close_prices
+        self.close_prices[vt_symbol] = price
 
-        for vt_symbol, close_price in close_prices.items():
-            contract_result = self.contract_results.get(vt_symbol, None)
-            if contract_result:
-                contract_result.update_close_price(close_price)
+        self.contract_results.setdefault(vt_symbol, ContractDailyResult(self.date, price)).update_close_price(price)
 
 
 @lru_cache(maxsize=999)
 def load_bar_data(
-    vt_symbol: str,
+    symbol: str,
+    exchange: Exchange,
     interval: Interval,
     start: datetime,
     end: datetime
 ):
     """"""
-    symbol, exchange = extract_vt_symbol(vt_symbol)
-
     database = get_database()
 
     return database.load_bar_data(
         symbol, exchange, interval, start, end
+    )
+
+
+@lru_cache(maxsize=999)
+def load_tick_data(
+    symbol: str,
+    exchange: Exchange,
+    start: datetime,
+    end: datetime
+):
+    """"""
+    database = get_database()
+
+    return database.load_tick_data(
+        symbol, exchange, start, end
     )

@@ -5,12 +5,13 @@ import pandas as pd
 from jqdatasdk import auth, is_auth, get_all_securities
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from dateutil import tz
 
 import numpy as np
 
 from vnpy.app.portfolio_strategy import StrategyTemplate, StrategyEngine
 from vnpy.trader.utility import BarGenerator
-from vnpy.trader.object import TickData, BarData, TradeData, OrderData
+from vnpy.trader.object import TickData, BarData, TradeData
 
 
 class BackwardationRollingStrategy(StrategyTemplate):
@@ -53,6 +54,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self.bgs: Dict[str, BarGenerator] = {}
         self.targets: Dict[str, int] = {}
         self.last_tick_time: Optional[datetime] = None
+        self.last_bar_time: Optional[datetime] = datetime(1970,1,1, tzinfo=tz.gettz('Asia/Shanghai'))
+        self.minute_bars: Dict[str, BarData] = {}
         self.underlying_symbol = vt_symbols[-1][:2]
 
         self.spread_count: int = 0
@@ -74,13 +77,9 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         self.switches = {}
 
-        def on_bar(_: BarData):
-            """"""
-            pass
-
         for vt_symbol in self.vt_symbols:
             self.targets[vt_symbol] = 0
-            self.bgs[vt_symbol] = BarGenerator(on_bar)
+            self.bgs[vt_symbol] = BarGenerator(self.on_bar)
 
     def _load_auxiliary_data(self):
         cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.__class__.__name__)
@@ -159,20 +158,26 @@ class BackwardationRollingStrategy(StrategyTemplate):
             self.last_tick_time
             and self.last_tick_time.minute != tick.datetime.minute
         ):
-            bars = {}
             for vt_symbol, bg in self.bgs.items():
-                bars[vt_symbol] = bg.generate()
-            self.on_bars(bars)
+                self.on_bar(bg.generate())
 
         bg: BarGenerator = self.bgs[tick.vt_symbol]
         bg.update_tick(tick)
 
         self.last_tick_time = tick.datetime
 
-    def on_bars(self, bars: Dict[str, BarData]):
+    def on_bar(self, bar: BarData) -> None:
+        self.minute_bars[bar.vt_symbol] = bar
+        if bar.datetime > self.last_bar_time:
+            self.last_bar_time = bar.datetime
+        if all(s in self.minute_bars and self.last_bar_time == self.minute_bars[s].datetime
+               for s in self.vt_symbols_today) and self.minute_bars[self.vt_symbol_spot].datetime == self.last_bar_time:
+            self.on_bars()
+
+    def on_bars(self):
         """"""
         self.cancel_all()
-
+        bars = self.minute_bars
         bar_timestamp = bars[self.vt_symbols_today[0]].datetime
         for i in range(self.contracts_same_day):
             for j in range(self.contracts_same_day):

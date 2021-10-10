@@ -1,7 +1,7 @@
 """"""
 from abc import ABC
 from copy import copy
-from typing import Dict, Set, List, TYPE_CHECKING
+from typing import Dict, Set, List, TYPE_CHECKING, Union
 from collections import defaultdict
 
 from vnpy.trader.constant import Interval, Direction, Offset
@@ -37,6 +37,7 @@ class StrategyTemplate(ABC):
 
         self.orders: Dict[str, OrderData] = {}
         self.active_orderids: Set[str] = set()
+        self.latest_data: Dict[str, Union[TickData, BarData]] = {}
 
         # Copy a new variables list here to avoid duplicate insert when multiple
         # strategy instances are created with the same strategy class.
@@ -97,6 +98,9 @@ class StrategyTemplate(ABC):
         }
         return strategy_data
 
+    def update_latest_data(self, data: Union[TickData, BarData]):
+        self.latest_data[data.vt_symbol] = data
+
     @virtual
     def on_init(self) -> None:
         """
@@ -126,7 +130,7 @@ class StrategyTemplate(ABC):
         pass
 
     @virtual
-    def on_bars(self, bars: Dict[str, BarData]) -> None:
+    def on_bar(self, bar: BarData) -> None:
         """
         Callback of new bar data update.
         """
@@ -221,7 +225,7 @@ class StrategyTemplate(ABC):
         """"""
         return self.orders.get(vt_orderid, None)
 
-    def get_all_active_orderids(self) -> List[OrderData]:
+    def get_all_active_orderids(self) -> List[str]:
         """"""
         return list(self.active_orderids)
 
