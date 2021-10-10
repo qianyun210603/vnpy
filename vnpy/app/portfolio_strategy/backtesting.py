@@ -1,6 +1,6 @@
 from collections import defaultdict, OrderedDict, deque
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Optional
 from functools import lru_cache
 from copy import copy
 import traceback
@@ -33,22 +33,22 @@ class BacktestingEngine:
     def __init__(self):
         """"""
         self.vt_symbols: List[str] = []
-        self.start: datetime = None
-        self.end: datetime = None
+        self.start: Optional[datetime] = None
+        self.end: Optional[datetime] = None
 
-        self.rates: Dict[str, float] = 0
-        self.slippages: Dict[str, float] = 0
-        self.sizes: Dict[str, float] = 1
-        self.priceticks: Dict[str, float] = 0
+        self.rates: Dict[str, float] = {}
+        self.slippages: Dict[str, float] = {}
+        self.sizes: Dict[str, float] = {}
+        self.priceticks: Dict[str, float] = {}
 
         self.capital: float = 1_000_000
         self.risk_free: float = 0
 
-        self.strategy: StrategyTemplate = None
+        self.strategy: Optional[StrategyTemplate] = None
         self.bars: Dict[str, BarData] = {}
-        self.datetime: datetime = None
+        self.datetime: Optional[datetime] = None
 
-        self.interval: Interval = None
+        self.interval: Optional[Interval] = None
         self.days: int = 0
         self.history_data: Dict[Tuple, BarData] = {}
         self.dts: Set[datetime] = set()
@@ -176,8 +176,7 @@ class BacktestingEngine:
         self.strategy.on_init()
 
         # Generate sorted datetime list
-        dts = list(self.dts)
-        dts.sort()
+        dts = sorted(self.dts)
 
         # Use the first [days] of history data for initializing strategy
         day_count = 0
@@ -214,13 +213,17 @@ class BacktestingEngine:
 
         self.output("历史数据回放结束")
 
-    def calculate_result(self) -> None:
+    def calculate_result(self) -> DataFrame:
         """"""
         self.output("开始计算逐日盯市盈亏")
 
         if not self.trades:
             self.output("成交记录为空，无法计算")
-            return
+            return DataFrame(columns=[
+                "trade_count", "turnover",
+                "commission", "slippage", "trading_pnl",
+                "holding_pnl", "total_pnl", "net_pnl"
+            ])
 
         # Add trade data into daily reuslt.
         for trade in self.trades.values():
@@ -262,7 +265,7 @@ class BacktestingEngine:
         self.output("逐日盯市盈亏计算完成")
         return self.daily_df
 
-    def calculate_statistics(self, df: DataFrame = None, output=True) -> None:
+    def calculate_statistics(self, df: DataFrame = None, output=True):
         """"""
         self.output("开始计算策略统计指标")
 
@@ -595,23 +598,23 @@ class BacktestingEngine:
 
     def load_bars(
         self,
-        strategy: StrategyTemplate,
+        _: StrategyTemplate,
         days: int,
-        interval: Interval
+        __: Interval
     ) -> None:
         """"""
         self.days = days
 
     def send_order(
         self,
-        strategy: StrategyTemplate,
+        _: StrategyTemplate,
         vt_symbol: str,
         direction: Direction,
         offset: Offset,
         price: float,
         volume: float,
-        lock: bool,
-        net: bool
+        __: bool,
+        ___: bool
     ) -> List[str]:
         """"""
         price = round_to(price, self.priceticks[vt_symbol])
@@ -638,7 +641,7 @@ class BacktestingEngine:
 
         return [order.vt_orderid]
 
-    def cancel_order(self, strategy: StrategyTemplate, vt_orderid: str) -> None:
+    def cancel_order(self, _: StrategyTemplate, vt_orderid: str) -> None:
         """
         Cancel order by vt_orderid.
         """
@@ -651,7 +654,7 @@ class BacktestingEngine:
         order.status = Status.CANCELLED
         self.strategy.update_order(order)
 
-    def write_log(self, msg: str, strategy: StrategyTemplate = None) -> None:
+    def write_log(self, msg: str, _: StrategyTemplate = None) -> None:
         """
         Write log message.
         """
@@ -670,7 +673,7 @@ class BacktestingEngine:
         """
         pass
 
-    def get_pricetick(self, strategy: StrategyTemplate, vt_symbol) -> float:
+    def get_pricetick(self, _: StrategyTemplate, vt_symbol) -> float:
         """
         Return contract pricetick data.
         """
@@ -739,7 +742,7 @@ class ContractDailyResult:
         self,
         pre_close: float,
         start_pos: float,
-        size: int,
+        size: float,
         rate: float,
         slippage: float
     ) -> None:
