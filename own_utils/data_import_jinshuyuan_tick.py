@@ -18,7 +18,7 @@ def run_load_csv(root_path):
             continue
 
         csv_load(database_manager, os.path.join(root_path, file), exchange=Exchange.CFFEX)
-        os.remove(os.path.join(root_path, file))
+        # os.remove(os.path.join(root_path, file))
 
 
 def csv_load(database_manager, file, exchange):
@@ -51,7 +51,7 @@ def csv_load(database_manager, file, exchange):
             dt = datetime.strptime(standard_time, "%Y%m%d %H:%M:%S.%f")
 
             # filter
-            if dt.time()<=time(9, 30) or dt.time()>=time(15, 0) or time(11, 30)<=dt.time()<=time(13, 0):
+            if dt.time()<time(9, 30) or dt.time()>time(15, 0) or time(11, 30)<dt.time()<time(13, 0):
                 continue
 
             tick = TickData(
@@ -59,12 +59,21 @@ def csv_load(database_manager, file, exchange):
                 datetime=dt,
                 exchange=exchange,
                 last_price=float(item["最新价"]),
+                last_volume=float(item["数量"]),
                 volume=float(item["持仓量"]),
+                turnover=float(item["成交金额"]),
+                limit_up=float(item["涨停板价"]),
+                limit_down=float(item["跌停板价"]),
+                open_price=float(item["今开盘"]),
+                high_price=float(item["最高价"]),
+                low_price=float(item["最低价"]),
+                pre_close=float(item["昨收盘"]),
                 bid_price_1=float(item["申买价一"]),
                 bid_volume_1=float(item["申买量一"]),
                 ask_price_1=float(item["申卖价一"]),
                 ask_volume_1=float(item["申卖量一"]),
                 gateway_name="DB",
+                localtime=dt
             )
             ticks.append(tick)
 
@@ -85,6 +94,6 @@ def csv_load(database_manager, file, exchange):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Save tick data from jinshuyuan to vnpy.')
     parser.add_argument('-path',
-                        default=r'G:\FutSF_TickKZ_CTP_Daily_2020')  # source:path
+                        default=r'G:\FutSF_TickKZ_CTP_Daily_2020\if2102')  # source:path
     args = parser.parse_args()
     run_load_csv(args.path)
