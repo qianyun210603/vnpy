@@ -58,12 +58,21 @@ def csv_load(database_manager, file, exchange):
                 datetime=dt,
                 exchange=exchange,
                 last_price=float(item["最新价"]),
+                last_volume=float(item["数量"]),
                 volume=float(item["持仓量"]),
+                turnover=float(item["成交金额"]),
+                limit_up=float(item["涨停板价"]),
+                limit_down=float(item["跌停板价"]),
+                open_price=float(item["今开盘"]),
+                high_price=float(item["最高价"]),
+                low_price=float(item["最低价"]),
+                pre_close=float(item["昨收盘"]),
                 bid_price_1=float(item["申买价一"]),
                 bid_volume_1=float(item["申买量一"]),
                 ask_price_1=float(item["申卖价一"]),
                 ask_volume_1=float(item["申卖量一"]),
                 gateway_name="DB",
+                localtime=dt
             )
             ticks.append(tick)
 
