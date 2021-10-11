@@ -15,7 +15,8 @@ if __name__ == '__main__':
 
     engine.set_parameters(
         vt_symbols=vt_symbols,
-        interval=Interval.MINUTE,
+        interval=Interval.TICK,
+        intervals={'000300.SSE': Interval.MINUTE},
         start=datetime(2021, 1, 1),
         end=datetime(2021, 2, 28),
         rates={ x: 0.23 / 10000 for x in vt_symbols },

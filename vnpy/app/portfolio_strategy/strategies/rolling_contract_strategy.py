@@ -158,9 +158,13 @@ class BackwardationRollingStrategy(StrategyTemplate):
             self.last_tick_time
             and self.last_tick_time.minute != tick.datetime.minute
         ):
-            for vt_symbol, bg in self.bgs.items():
-                self.on_bar(bg.generate())
 
+            bg = self.bgs[tick.vt_symbol]
+            print(tick.vt_symbol, tick.datetime)
+            self.on_bar(bg.generate())
+        from datetime import time
+        if tick.datetime.time() > time(14, 59):
+            print(tick.datetime)
         bg: BarGenerator = self.bgs[tick.vt_symbol]
         bg.update_tick(tick)
 

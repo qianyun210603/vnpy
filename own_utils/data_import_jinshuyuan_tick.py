@@ -18,7 +18,7 @@ def run_load_csv(root_path):
             continue
 
         csv_load(database_manager, os.path.join(root_path, file), exchange=Exchange.CFFEX)
-        os.remove(os.path.join(root_path, file))
+        # os.remove(os.path.join(root_path, file))
 
 
 def csv_load(database_manager, file, exchange):
@@ -32,7 +32,6 @@ def csv_load(database_manager, file, exchange):
     if symbol.endswith('主力连续'):
         symbol = symbol.replace('主力连续', "88")
 
-    print("载入文件：", file)
     with open(file, "r") as f:
         reader = csv.DictReader(f)
 
@@ -51,7 +50,7 @@ def csv_load(database_manager, file, exchange):
             dt = datetime.strptime(standard_time, "%Y%m%d %H:%M:%S.%f")
 
             # filter
-            if dt.time()<=time(9, 30) or dt.time()>=time(15, 0) or time(11, 30)<=dt.time()<=time(13, 0):
+            if dt.time() < time(9, 30) or dt.time() > time(15, 0) or time(11, 30) < dt.time() < time(13, 0):
                 continue
 
             tick = TickData(
@@ -77,9 +76,9 @@ def csv_load(database_manager, file, exchange):
             end = ticks[-1].datetime
             database_manager.save_tick_data(ticks)
 
-            print("插入数据", start, "-", end, "总数量：", count)
+            print("处理文件：", base_name, " 插入数据", start, "-", end, "总数量：", count)
         else:
-            print("无数据可供插入")
+            print("处理文件：", base_name, "无数据可供插入")
 
 
 if __name__ == '__main__':

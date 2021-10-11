@@ -20,6 +20,7 @@ from .template import StrategyTemplate
 
 
 INTERVAL_DELTA_MAP = {
+    Interval.TICK: timedelta(milliseconds=1),
     Interval.MINUTE: timedelta(minutes=1),
     Interval.HOUR: timedelta(hours=1),
     Interval.DAILY: timedelta(days=1),
@@ -97,6 +98,7 @@ class BacktestingEngine:
         self,
         vt_symbols: List[str],
         interval: Interval,
+        intervals: Dict[str, Interval],
         start: datetime,
         rates: Dict[str, float],
         slippages: Dict[str, float],
@@ -109,6 +111,7 @@ class BacktestingEngine:
         """"""
         self.vt_symbols = vt_symbols
         self.interval = interval
+        self.intervals = intervals
 
         self.rates = rates
         self.slippages = slippages
@@ -160,7 +163,7 @@ class BacktestingEngine:
                     data = load_bar_data(
                         symbol,
                         exchange,
-                        self.interval,
+                        self.intervals.get(vt_symbol, self.interval),
                         start,
                         end
                     )
