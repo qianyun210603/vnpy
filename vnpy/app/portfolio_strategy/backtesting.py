@@ -147,13 +147,13 @@ class BacktestingEngine:
         # Load 30 days of data each time and allow for progress update
         progress_delta = timedelta(days=30)
         total_delta = self.end - self.start
-        interval_delta = INTERVAL_DELTA_MAP[self.interval]
 
         for vt_symbol in self.vt_symbols:
             start = self.start
             end = self.start + progress_delta
             progress = 0
             symbol, exchange = extract_vt_symbol(vt_symbol)
+            interval_delta = INTERVAL_DELTA_MAP[self.intervals.get(vt_symbol, self.interval)]
 
             data_count = 0
             while start < self.end:
@@ -167,6 +167,12 @@ class BacktestingEngine:
                         start,
                         end
                     )
+                    for d in data:
+                        # self.dts.add(bar.datetime)
+                        self.history_data.setdefault(
+                            d.datetime + interval_delta - timedelta(microseconds=1), {}
+                        )[vt_symbol] = d
+                        data_count += 1
                 else:
                     data = load_tick_data(
                         symbol,
@@ -174,11 +180,13 @@ class BacktestingEngine:
                         start,
                         end
                     )
-
-                for d in data:
-                    # self.dts.add(bar.datetime)
-                    self.history_data.setdefault(d.datetime, {})[vt_symbol] = d
-                    data_count += 1
+                    for d in data:
+                        # self.dts.add(bar.datetime)
+                        # Since vnpy marks the timestamp at the beginning of the bar, for mixture backtesting, need
+                        # to shift timestamp to end of bar to avoid forword looking
+                        # (compare with tick or higher frequency bar)
+                        self.history_data.setdefault(d.datetime, {})[vt_symbol] = d
+                        data_count += 1
 
                 progress += progress_delta / total_delta
                 progress = min(progress, 1)
@@ -509,7 +517,6 @@ class BacktestingEngine:
 
         self.daily_results[d].update_close_price(vt_symbol, price)
 
-
     def new_data(self, dt: datetime) -> None:
         """"""
         if self.datetime is None or self.datetime.day != dt.day:
@@ -520,7 +527,7 @@ class BacktestingEngine:
             self.strategy.update_latest_data(self.history_data[dt][vt_symbol])
 
         self.cross_limit_order(dt)
-        self.limit_order_process_queue.extend(set(self.active_limit_orders).intersection(self.history_data[dt]))
+        self.limit_order_process_queue.extend(self.active_limit_orders)
         for vt_symbol, mkt_data in self.history_data[dt].items():
             if self.intervals.get(vt_symbol, self.interval) == Interval.TICK:
                 self.strategy.on_tick(mkt_data)
@@ -549,12 +556,12 @@ class BacktestingEngine:
                 long_best_price = mk_data.open_price
                 short_best_price = mk_data.open_price
             else:
-                if np.isnan(mk_data.last_price):
-                    mk_data.last_price = (mk_data.bid_price_1 + mk_data.ask_price_1) / 2
+                last_price = (mk_data.bid_price_1 + mk_data.ask_price_1) / 2 if np.isnan(mk_data.last_price) \
+                    else mk_data.last_price
                 long_cross_price = mk_data.ask_price_1
                 short_cross_price = mk_data.bid_price_1
-                long_best_price = max(mk_data.ask_price_1, mk_data.last_price)
-                short_best_price = min(mk_data.bid_price_1, mk_data.last_price)
+                long_best_price = max(mk_data.ask_price_1, last_price)
+                short_best_price = min(mk_data.bid_price_1, last_price)
 
             # Push order update with status "not traded" (pending).
             if order.status == Status.SUBMITTING:

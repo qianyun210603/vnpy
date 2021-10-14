@@ -11,7 +11,8 @@ import numpy as np
 
 from vnpy.app.portfolio_strategy import StrategyTemplate, StrategyEngine
 from vnpy.trader.utility import BarGenerator
-from vnpy.trader.object import TickData, BarData, TradeData
+from vnpy.trader.object import TickData, BarData, TradeData, OrderData
+# from vnpy.trader.constant import Status
 
 
 class BackwardationRollingStrategy(StrategyTemplate):
@@ -54,9 +55,10 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self.bgs: Dict[str, BarGenerator] = {}
         self.targets: Dict[str, int] = {}
         self.last_tick_time: Optional[datetime] = None
-        self.last_bar_time: Optional[datetime] = datetime(1970,1,1, tzinfo=tz.gettz('Asia/Shanghai'))
+        self.last_bar_time: Optional[datetime] = datetime(1970, 1, 1, tzinfo=tz.gettz('Asia/Shanghai'))
         self.minute_bars: Dict[str, BarData] = {}
         self.underlying_symbol = vt_symbols[-1][:2]
+        self.ticks: Dict[str, TickData] = {}
 
         self.spread_count: int = 0
         self.contracts_same_day = 4
@@ -91,8 +93,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 contract_records = pickle.load(f)
             record_date = contract_records['date']
             contract_list = pd.DataFrame(contract_records['records'])
-            if not contract_list[
-                (contract_list.end_date>=record_date)&(contract_list.end_date<=pd.Timestamp.now())].empty:
+            if not contract_list[(contract_list.end_date >= record_date) &
+                                 (contract_list.end_date <= pd.Timestamp.now())].empty:
                 contract_list = None
         if contract_list is None:
             if not is_auth():
@@ -119,7 +121,6 @@ class BackwardationRollingStrategy(StrategyTemplate):
         """
         self.write_log("策略启动")
 
-
     def on_day_open(self, today) -> None:
 
         raw = self.contract_info[
@@ -128,8 +129,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
             ].sort_values(by='end_date').index.to_list()
         self.vt_symbols_today = [x + '.CFFEX' for x in raw]
         self.expiries = [x.to_pydatetime() for x in self.contract_info.loc[raw, 'end_date']]
-        #print(self.vt_symbols_today)
-        #print([(x - today.replace(hour=0, minute=0, second=0)).days for x in self.expiries])
+        # print(self.vt_symbols_today)
+        # print([(x - today.replace(hour=0, minute=0, second=0)).days for x in self.expiries])
         for i in range(self.contracts_same_day):
             for j in range(self.contracts_same_day):
                 std = self.spread_datas[(i, j)].std()
@@ -141,8 +142,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 }
                 self.bounds[(i, j)] = params
                 # print(today, (i, j), str(params))
-        #print(today, self.bounds[(1, 2)])
-
+        print(today, self.bounds[(1, 2)])
 
     def on_stop(self):
         """
@@ -154,6 +154,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         """
         Callback of new tick data update.
         """
+        self.ticks[tick.vt_symbol] = tick
         if (
             self.last_tick_time
             and self.last_tick_time.minute != tick.datetime.minute
@@ -170,22 +171,68 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         self.last_tick_time = tick.datetime
 
+        if not all(vt_sym in self.ticks for vt_sym in self.vt_symbols_today) or bool(self.get_all_active_orderids()):
+            return
+
+        days_to_expiry_for_0 = (self.expiries[0] - tick.datetime).days
+        expiry_penalty_factor = np.exp(0.3 * (5 - min(5, days_to_expiry_for_0 - 2)))
+        # total = sum(holdings)
+        # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
+        # if total > self.target_position:
+        # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
+        ticks: Dict[str, TickData] = self.ticks
+        vt_symbol = tick.vt_symbol
+        idx = self.vt_symbols_today.index(vt_symbol)
+        current_pos_this_symbol = self.get_pos(vt_symbol)
+        if current_pos_this_symbol > 0:
+            tick_sprds = [ticks[s].ask_price_1 - ticks[vt_symbol].bid_price_1 for s in self.vt_symbols_today]
+            normalized = np.array([(ts - self.bounds[(s, idx)]['mean']) / self.bounds[(s, idx)]['bandwidth']
+                                   for s, ts in enumerate(tick_sprds)])
+            if days_to_expiry_for_0 < 2:
+                argmin = np.argmin(normalized[1:]) + 1
+            else:
+                normalized[0] /= expiry_penalty_factor
+                argmin = np.argmin(normalized)
+
+            if argmin == idx or argmin == 0 or argmin == 3:
+                return
+
+            if normalized[argmin] < -self.boll_dev:
+                # print(bar_timestamp.isoformat(), normalized, argmin)
+                target_price = ticks[vt_symbol].bid_price_1 - self.bounds[(idx, argmin)]['mean'] - \
+                               self.bounds[(argmin, idx)]['bandwidth'] * \
+                               self.boll_dev * (expiry_penalty_factor if argmin == 0 else 1.0)
+
+                self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+                close_price = ticks[vt_symbol].bid_price_1 - 5
+                self.switches.update({self.vt_symbols_today[argmin]: (vt_symbol, close_price)})
+                # self.sell(vt_symbol, close_price, current_pos_this_symbol)
+                # print(f"{bar_timestamp.isoformat()} - switch from idx {idx} "
+                #       f"({vt_symbol}) @ {close_price:.2f} to idx"
+                #       f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
+
     def on_bar(self, bar: BarData) -> None:
         self.minute_bars[bar.vt_symbol] = bar
+        # print(bar.datetime.isoformat(), bar.vt_symbol, bar.open_price, bar.high_price, bar.low_price, bar.close_price)
         if bar.datetime > self.last_bar_time:
             self.last_bar_time = bar.datetime
+        # print(self.last_bar_time.isoformat(), bar.vt_symbol, bar.datetime.isoformat(),
+        # self.minute_bars[self.vt_symbol_spot].datetime)
         if all(s in self.minute_bars and self.last_bar_time == self.minute_bars[s].datetime
                for s in self.vt_symbols_today) and self.minute_bars[self.vt_symbol_spot].datetime == self.last_bar_time:
             self.on_bars()
 
     def on_bars(self):
         """"""
-        self.cancel_all()
+        # self.cancel_all()
         bars = self.minute_bars
         bar_timestamp = bars[self.vt_symbols_today[0]].datetime
         for i in range(self.contracts_same_day):
+            si = self.vt_symbols_today[i]
+            # barsi = self.minute_bars[si]
+            # print(barsi.datetime.isoformat(), barsi.vt_symbol, barsi.open_price, barsi.high_price, barsi.low_price,
+            #       barsi.close_price)
             for j in range(self.contracts_same_day):
-                si = self.vt_symbols_today[i]
                 sj = self.vt_symbols_today[j]
                 current_spread = bars[si].close_price - bars[sj].close_price
                 self.spread_datas[(i, j)][:-1] = self.spread_datas[(i, j)][1:]
@@ -193,58 +240,73 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         if not self.trading:
             return
-
-        total_pos = 0
+        holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
         days_to_expiry_for_0 = (self.expiries[0] - bar_timestamp).days
-        expiry_penalty_factor = np.exp(0.3* (5 - min(5, days_to_expiry_for_0)))
-        # holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
-        # total = sum(holdings)
-        # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
-        # if total > self.target_position:
-        # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
-        for idx, vt_symbol in enumerate(self.vt_symbols_today):
-            current_pos_this_symbol = self.get_pos(vt_symbol)
-            total_pos += current_pos_this_symbol
-            if current_pos_this_symbol > 0:
-                tick_sprds = [bars[s].close_price - bars[vt_symbol].close_price for s in self.vt_symbols_today]
-                normalized = np.array([(ts-self.bounds[(s, idx)]['mean'])/self.bounds[(s, idx)]['bandwidth']
-                              for s, ts in enumerate(tick_sprds)])
-                if idx == 0 and days_to_expiry_for_0 < 2:
-                    argmin = np.argmin(normalized[1:]) + 1
-                else:
-                    normalized[0] /= expiry_penalty_factor
-                    argmin = np.argmin(normalized)
 
-                if argmin == idx:
-                    continue
+        if not bool(self.ticks) and bool(self.minute_bars):
+            expiry_penalty_factor = np.exp(0.3 * (5 - min(5, days_to_expiry_for_0 - 2)))
+            # total = sum(holdings)
+            # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
+            # if total > self.target_position:
+            # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
+            for idx, vt_symbol in enumerate(self.vt_symbols_today):
+                current_pos_this_symbol = self.get_pos(vt_symbol)
+                if current_pos_this_symbol > 0:
+                    tick_sprds = [bars[s].close_price - bars[vt_symbol].close_price for s in self.vt_symbols_today]
+                    normalized = np.array([(ts-self.bounds[(s, idx)]['mean'])/self.bounds[(s, idx)]['bandwidth']
+                                           for s, ts in enumerate(tick_sprds)])
+                    if days_to_expiry_for_0 < 2:
+                        argmin = np.argmin(normalized[1:]) + 1
+                    else:
+                        normalized[0] /= expiry_penalty_factor
+                        argmin = np.argmin(normalized)
 
-                if normalized[argmin] < -self.boll_dev:
-                    # print(bar_timestamp.isoformat(), normalized, argmin)
-                    target_price = bars[vt_symbol].close_price - self.bounds[(idx, argmin)]['mean'] - \
-                                   self.bounds[(argmin, idx)]['bandwidth'] * \
-                                   self.boll_dev * (expiry_penalty_factor if argmin == 0 else 1)
+                    if argmin == idx:
+                        continue
 
-                    self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
-                    close_price = bars[vt_symbol].close_price - self.price_add
-                    self.switches.update({self.vt_symbols_today[argmin]: (vt_symbol, close_price)})
-                    # self.sell(vt_symbol, close_price, current_pos_this_symbol)
-                    print(f"{bar_timestamp.isoformat()} - switch from idx {idx} "
-                          f"({vt_symbol}) @{close_price:.2f} to idx"
-                          f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
-        if total_pos < self.target_position:
+                    if normalized[argmin] < -self.boll_dev:
+                        # print(bar_timestamp.isoformat(), normalized, argmin)
+                        target_price = bars[vt_symbol].close_price - self.bounds[(idx, argmin)]['mean'] - \
+                                       self.bounds[(argmin, idx)]['bandwidth'] * \
+                                       self.boll_dev * (expiry_penalty_factor if argmin == 0 else 1)
+
+                        self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+                        close_price = bars[vt_symbol].close_price - self.price_add
+                        self.switches.update({self.vt_symbols_today[argmin]: (vt_symbol, close_price)})
+                        # self.sell(vt_symbol, close_price, current_pos_this_symbol)
+                        # print(f"{bar_timestamp.isoformat()} - switch from idx {idx} "
+                        #       f"({vt_symbol}) @{close_price:.2f} to idx"
+                        #       f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
+        else:
+            pos_0 = self.get_pos(self.vt_symbols_today[0])
+            if pos_0 > 0 and days_to_expiry_for_0 < 2:
+                self.buy(self.vt_symbols_today[1], bars[self.vt_symbols_today[1]].close_price + self.price_add, pos_0)
+                close_price = bars[self.vt_symbols_today[0]].close_price - self.price_add
+                self.switches.update({self.vt_symbols_today[1]: (self.vt_symbols_today[0], close_price)})
+
+        if sum(holdings) < self.target_position:
+            print("buy future")
             self.buy(
                 self.vt_symbols_today[1], bars[self.vt_symbols_today[1]].close_price + self.price_add,
-                volume=self.target_position-total_pos
+                volume=self.target_position-sum(holdings)
             )
 
         short_spot_pos = self.get_pos(self.vt_symbol_spot)
         if short_spot_pos != -self.target_position:
-            self.short(self.vt_symbol_spot, bars[self.vt_symbol_spot].close_price, abs(-self.target_position - short_spot_pos))
+            print(bar_timestamp.isoformat(), " - short spot")
+            self.short(self.vt_symbol_spot, bars[self.vt_symbol_spot].close_price - self.price_add,
+                       abs(-self.target_position - short_spot_pos))
 
         self.put_event()
+
+    def update_order(self, order: OrderData) -> None:
+        super(BackwardationRollingStrategy, self).update_order(order)
+        # print(order)
 
     def update_trade(self, trade: TradeData) -> None:
         super(BackwardationRollingStrategy, self).update_trade(trade)
         if trade.vt_symbol in self.switches:
             vt_symbol, close_price = self.switches.pop(trade.vt_symbol)
+            print(f"{trade.datetime.isoformat()} - switch from {vt_symbol} @{close_price:.2f} to"
+                  f" {trade.vt_symbol} @{trade.price:.2f})")
             self.sell(vt_symbol, close_price, trade.volume)

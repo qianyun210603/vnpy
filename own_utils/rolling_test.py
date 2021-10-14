@@ -36,3 +36,4 @@ if __name__ == '__main__':
     engine.run_backtesting()
     df = engine.calculate_result()
     engine.calculate_statistics()
+    print(df[["trading_pnl", "holding_pnl", "total_pnl"]])
