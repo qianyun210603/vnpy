@@ -519,9 +519,9 @@ class BacktestingEngine:
 
     def new_data(self, dt: datetime) -> None:
         """"""
+        self.datetime = dt
         if self.datetime is None or self.datetime.day != dt.day:
             self.strategy.on_day_open(dt)
-        self.datetime = dt
 
         for vt_symbol in self.history_data[dt]:
             self.strategy.update_latest_data(self.history_data[dt][vt_symbol])
@@ -566,6 +566,7 @@ class BacktestingEngine:
             # Push order update with status "not traded" (pending).
             if order.status == Status.SUBMITTING:
                 order.status = Status.NOTTRADED
+                order.datetime = dt
                 self.strategy.update_order(order)
 
             # Check whether limit orders can be filled.

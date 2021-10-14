@@ -78,6 +78,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self.expiries: List[datetime] = []
 
         self.switches = {}
+        self.switch_mapping = {}
 
         for vt_symbol in self.vt_symbols:
             self.targets[vt_symbol] = 0
@@ -113,7 +114,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         Callback when strategy is inited.
         """
         self.write_log("策略初始化")
-        self.load_bars(3)
+        self.load_bars(self.boll_window // 240 + 1)
 
     def on_start(self):
         """
@@ -171,7 +172,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         self.last_tick_time = tick.datetime
 
-        if not all(vt_sym in self.ticks for vt_sym in self.vt_symbols_today) or bool(self.get_all_active_orderids()):
+        if not all(vt_sym in self.ticks for vt_sym in self.vt_symbols_today) or bool(self.switches):
             return
 
         days_to_expiry_for_0 = (self.expiries[0] - tick.datetime).days
@@ -194,7 +195,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 normalized[0] /= expiry_penalty_factor
                 argmin = np.argmin(normalized)
 
-            if argmin == idx or argmin == 0 or argmin == 3:
+            if argmin == idx:
                 return
 
             if normalized[argmin] < -self.boll_dev:
@@ -205,7 +206,10 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
                 self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
                 close_price = ticks[vt_symbol].bid_price_1 - 5
-                self.switches.update({self.vt_symbols_today[argmin]: (vt_symbol, close_price)})
+                self.switches.update({
+                    self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
+                })
+                self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
                 # self.sell(vt_symbol, close_price, current_pos_this_symbol)
                 # print(f"{bar_timestamp.isoformat()} - switch from idx {idx} "
                 #       f"({vt_symbol}) @ {close_price:.2f} to idx"
@@ -243,7 +247,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
         days_to_expiry_for_0 = (self.expiries[0] - bar_timestamp).days
 
-        if not bool(self.ticks) and bool(self.minute_bars):
+        if not bool(self.ticks) and bool(self.minute_bars) and not bool(self.switches):
             expiry_penalty_factor = np.exp(0.3 * (5 - min(5, days_to_expiry_for_0 - 2)))
             # total = sum(holdings)
             # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
@@ -272,17 +276,16 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
                         self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
                         close_price = bars[vt_symbol].close_price - self.price_add
-                        self.switches.update({self.vt_symbols_today[argmin]: (vt_symbol, close_price)})
-                        # self.sell(vt_symbol, close_price, current_pos_this_symbol)
-                        # print(f"{bar_timestamp.isoformat()} - switch from idx {idx} "
-                        #       f"({vt_symbol}) @{close_price:.2f} to idx"
-                        #       f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
-        else:
-            pos_0 = self.get_pos(self.vt_symbols_today[0])
-            if pos_0 > 0 and days_to_expiry_for_0 < 2:
-                self.buy(self.vt_symbols_today[1], bars[self.vt_symbols_today[1]].close_price + self.price_add, pos_0)
-                close_price = bars[self.vt_symbols_today[0]].close_price - self.price_add
-                self.switches.update({self.vt_symbols_today[1]: (self.vt_symbols_today[0], close_price)})
+                        self.switches.update({
+                            self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
+                        })
+                        self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
+        # else:
+        #     pos_0 = self.get_pos(self.vt_symbols_today[0])
+        #     if pos_0 > 0 and days_to_expiry_for_0 < 2:
+        #         self.buy(self.vt_symbols_today[1], bars[self.vt_symbols_today[1]].close_price + self.price_add, pos_0)
+        #         close_price = bars[self.vt_symbols_today[0]].close_price - self.price_add
+        #         self.switches.update({self.vt_symbols_today[1]: (self.vt_symbols_today[0], close_price)})
 
         if sum(holdings) < self.target_position:
             print("buy future")
@@ -301,12 +304,22 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
     def update_order(self, order: OrderData) -> None:
         super(BackwardationRollingStrategy, self).update_order(order)
-        # print(order)
+        print(order)
 
     def update_trade(self, trade: TradeData) -> None:
         super(BackwardationRollingStrategy, self).update_trade(trade)
         if trade.vt_symbol in self.switches:
-            vt_symbol, close_price = self.switches.pop(trade.vt_symbol)
-            print(f"{trade.datetime.isoformat()} - switch from {vt_symbol} @{close_price:.2f} to"
+            from_vt_symbol, close_price = self.switches[trade.vt_symbol][:2]
+            print(f"{trade.datetime.isoformat()} - switch from {from_vt_symbol} @{close_price:.2f} to"
                   f" {trade.vt_symbol} @{trade.price:.2f})")
-            self.sell(vt_symbol, close_price, trade.volume)
+            self.switches[trade.vt_symbol][2] -= trade.volume
+            self.sell(from_vt_symbol, close_price, trade.volume)
+            self.switches[trade.vt_symbol][3] += trade.volume
+
+        if trade.vt_symbol in self.switch_mapping:
+            to_vt_symbol = self.switch_mapping[trade.vt_symbol]
+            self.switches[to_vt_symbol][3] -= trade.volume
+            if self.switches[to_vt_symbol][2] == 0 and self.switches[to_vt_symbol][3] == 0:
+                del self.switches[to_vt_symbol]
+                del self.switch_mapping[trade.vt_symbol]
+
