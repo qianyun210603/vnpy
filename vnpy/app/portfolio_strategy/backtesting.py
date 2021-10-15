@@ -12,7 +12,7 @@ from plotly.subplots import make_subplots
 from pandas import DataFrame
 
 from vnpy.trader.constant import Direction, Offset, Interval, Status, Exchange
-from vnpy.trader.database import get_database
+from vnpy.trader.database import get_database, DB_TZ
 from vnpy.trader.object import OrderData, TradeData, BarData, TickData
 from vnpy.trader.utility import round_to, extract_vt_symbol
 
@@ -156,6 +156,8 @@ class BacktestingEngine:
             interval_delta = INTERVAL_DELTA_MAP[self.intervals.get(vt_symbol, self.interval)]
 
             data_count = 0
+            real_start = datetime(2999, 1, 1, tzinfo=DB_TZ)
+            real_end = datetime(1970, 1, 1, tzinfo=DB_TZ)
             while start < self.end:
                 end = min(end, self.end)  # Make sure end time stays within set range
 
@@ -173,6 +175,8 @@ class BacktestingEngine:
                             d.datetime + interval_delta - timedelta(microseconds=1), {}
                         )[vt_symbol] = d
                         data_count += 1
+                        real_start = min(real_start, d.datetime)
+                        real_end = max(real_end, d.datetime)
                 else:
                     data = load_tick_data(
                         symbol,
@@ -187,6 +191,8 @@ class BacktestingEngine:
                         # (compare with tick or higher frequency bar)
                         self.history_data.setdefault(d.datetime, {})[vt_symbol] = d
                         data_count += 1
+                        real_start = min(real_start, d.datetime)
+                        real_end = max(real_end, d.datetime)
 
                 progress += progress_delta / total_delta
                 progress = min(progress, 1)
@@ -196,7 +202,8 @@ class BacktestingEngine:
                 start = end + interval_delta
                 end += (progress_delta + interval_delta)
 
-            self.output(f"{vt_symbol}历史数据加载完成，数据量：{data_count}")
+            self.output(f"{vt_symbol}历史数据加载完成，"
+                        f"从{real_start.isoformat()}到{real_end.isoformat()}，数据量：{data_count}")
 
         self.output("所有历史数据加载完成")
 
@@ -519,9 +526,9 @@ class BacktestingEngine:
 
     def new_data(self, dt: datetime) -> None:
         """"""
-        self.datetime = dt
         if self.datetime is None or self.datetime.day != dt.day:
             self.strategy.on_day_open(dt)
+        self.datetime = dt
 
         for vt_symbol in self.history_data[dt]:
             self.strategy.update_latest_data(self.history_data[dt][vt_symbol])

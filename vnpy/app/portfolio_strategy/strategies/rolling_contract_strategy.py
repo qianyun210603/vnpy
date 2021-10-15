@@ -4,7 +4,7 @@ import pickle
 import pandas as pd
 from jqdatasdk import auth, is_auth, get_all_securities
 from typing import List, Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, time
 from dateutil import tz
 
 import numpy as np
@@ -19,10 +19,10 @@ class BackwardationRollingStrategy(StrategyTemplate):
     """"""
 
     author = "Booksword"
-    price_add = 25
+    price_add = 15
     band_floor = 3
-    boll_window = 480
-    boll_dev = 2
+    boll_window = 1200
+    boll_dev = 100
     target_position = 0
 
     current_spread = 0.0
@@ -143,7 +143,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 }
                 self.bounds[(i, j)] = params
                 # print(today, (i, j), str(params))
-        print(today, self.bounds[(1, 2)])
+        # print(today, self.bounds[(1, 2)])
+        # print([self.get_pos(vt_s) for vt_s in self.vt_symbols_today])
 
     def on_stop(self):
         """
@@ -172,48 +173,60 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         self.last_tick_time = tick.datetime
 
-        if not all(vt_sym in self.ticks for vt_sym in self.vt_symbols_today) or bool(self.switches):
+        trading = self.trading and time(9, 31) < self.last_tick_time.time() < time(14, 55)
+
+        if not trading or not all(vt_sym in self.ticks for vt_sym in self.vt_symbols_today) or bool(self.switches):
             return
 
-        days_to_expiry_for_0 = (self.expiries[0] - tick.datetime).days
-        expiry_penalty_factor = np.exp(0.3 * (5 - min(5, days_to_expiry_for_0 - 2)))
         # total = sum(holdings)
         # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
         # if total > self.target_position:
         # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
         ticks: Dict[str, TickData] = self.ticks
-        vt_symbol = tick.vt_symbol
-        idx = self.vt_symbols_today.index(vt_symbol)
-        current_pos_this_symbol = self.get_pos(vt_symbol)
-        if current_pos_this_symbol > 0:
-            tick_sprds = [ticks[s].ask_price_1 - ticks[vt_symbol].bid_price_1 for s in self.vt_symbols_today]
-            normalized = np.array([(ts - self.bounds[(s, idx)]['mean']) / self.bounds[(s, idx)]['bandwidth']
-                                   for s, ts in enumerate(tick_sprds)])
-            if days_to_expiry_for_0 < 2:
-                argmin = np.argmin(normalized[1:]) + 1
-            else:
-                normalized[0] /= expiry_penalty_factor
-                argmin = np.argmin(normalized)
 
-            if argmin == idx:
-                return
+        holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
+        days_to_expiry_for_0 = (self.expiries[0] - tick.datetime).days
+        expiry_penalty_factor = np.exp(0.3 * (5 - min(5, days_to_expiry_for_0 - 2)))
+        for idx, vt_symbol in enumerate(self.vt_symbols_today):
+            current_pos_this_symbol = self.get_pos(vt_symbol)
+            if current_pos_this_symbol > 0:
+                tick_sprds = [ticks[s].ask_price_1 - ticks[vt_symbol].bid_price_1 for s in self.vt_symbols_today]
+                normalized = np.array([(ts - self.bounds[(s, idx)]['mean']) / self.bounds[(s, idx)]['bandwidth']
+                                       for s, ts in enumerate(tick_sprds)])
+                if days_to_expiry_for_0 < 2:
+                    argmin = np.argmin(normalized[1:]) + 1
+                else:
+                    normalized[0] /= expiry_penalty_factor
+                    argmin = np.argmin(normalized)
 
-            if normalized[argmin] < -self.boll_dev:
-                # print(bar_timestamp.isoformat(), normalized, argmin)
-                target_price = ticks[vt_symbol].bid_price_1 - self.bounds[(idx, argmin)]['mean'] - \
-                               self.bounds[(argmin, idx)]['bandwidth'] * \
-                               self.boll_dev * (expiry_penalty_factor if argmin == 0 else 1.0)
+                if argmin == idx:
+                    return
 
-                self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
-                close_price = ticks[vt_symbol].bid_price_1 - 5
-                self.switches.update({
-                    self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
-                })
-                self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
-                # self.sell(vt_symbol, close_price, current_pos_this_symbol)
-                # print(f"{bar_timestamp.isoformat()} - switch from idx {idx} "
-                #       f"({vt_symbol}) @ {close_price:.2f} to idx"
-                #       f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
+                if idx == 0 and days_to_expiry_for_0 < 2:
+                    print(tick.datetime.isoformat(), f'switch {vt_symbol} to {self.vt_symbols_today[argmin]}')
+                    target_price = ticks[self.vt_symbols_today[argmin]].ask_price_1 + self.price_add
+                    self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+                    close_price = ticks[vt_symbol].bid_price_1 - self.price_add
+                    self.switches.update({
+                        self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
+                    })
+                    self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
+                elif normalized[argmin] < -self.boll_dev:
+                    # print(bar_timestamp.isoformat(), normalized, argmin)
+                    target_price = ticks[vt_symbol].bid_price_1 - self.bounds[(idx, argmin)]['mean'] - \
+                                   self.bounds[(argmin, idx)]['bandwidth'] * \
+                                   self.boll_dev * (expiry_penalty_factor if argmin == 0 else 1.0)
+
+                    self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+                    close_price = ticks[vt_symbol].bid_price_1 - self.price_add
+                    self.switches.update({
+                        self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
+                    })
+                    self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
+                    # self.sell(vt_symbol, close_price, current_pos_this_symbol)
+                    print(f"{tick.datetime.isoformat()} - switch from idx {idx} "
+                          f"({vt_symbol}) @ {close_price:.2f} to idx"
+                          f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
 
     def on_bar(self, bar: BarData) -> None:
         self.minute_bars[bar.vt_symbol] = bar
@@ -268,7 +281,15 @@ class BackwardationRollingStrategy(StrategyTemplate):
                     if argmin == idx:
                         continue
 
-                    if normalized[argmin] < -self.boll_dev:
+                    if idx == 0 and days_to_expiry_for_0 < 2:
+                        target_price = bars[self.vt_symbols_today[argmin]].close_price + self.price_add
+                        self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+                        close_price = bars[vt_symbol].close_price - self.price_add
+                        self.switches.update({
+                            self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
+                        })
+                        self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
+                    elif normalized[argmin] < -self.boll_dev:
                         # print(bar_timestamp.isoformat(), normalized, argmin)
                         target_price = bars[vt_symbol].close_price - self.bounds[(idx, argmin)]['mean'] - \
                                        self.bounds[(argmin, idx)]['bandwidth'] * \
@@ -304,14 +325,17 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
     def update_order(self, order: OrderData) -> None:
         super(BackwardationRollingStrategy, self).update_order(order)
-        print(order)
+        # if order.datetime.replace(tzinfo=None) > datetime(2021, 3, 5):
+        #     pass
+        #     print(order)
 
     def update_trade(self, trade: TradeData) -> None:
         super(BackwardationRollingStrategy, self).update_trade(trade)
+        print(trade)
         if trade.vt_symbol in self.switches:
             from_vt_symbol, close_price = self.switches[trade.vt_symbol][:2]
-            print(f"{trade.datetime.isoformat()} - switch from {from_vt_symbol} @{close_price:.2f} to"
-                  f" {trade.vt_symbol} @{trade.price:.2f})")
+            # print(f"{trade.datetime.isoformat()} - switch from {from_vt_symbol} @{close_price:.2f} to"
+            #       f" {trade.vt_symbol} @{trade.price:.2f})")
             self.switches[trade.vt_symbol][2] -= trade.volume
             self.sell(from_vt_symbol, close_price, trade.volume)
             self.switches[trade.vt_symbol][3] += trade.volume
