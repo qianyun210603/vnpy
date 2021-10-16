@@ -15,10 +15,10 @@ if __name__ == '__main__':
 
     engine.set_parameters(
         vt_symbols=vt_symbols,
-        interval=Interval.MINUTE,
+        interval=Interval.TICK,
         intervals={'000300.SSE': Interval.MINUTE},
         start=datetime(2021, 1, 1),
-        end=datetime(2021, 9, 30),
+        end=datetime(2021, 2, 28),
         rates={x: 0.23 / 10000 for x in vt_symbols},
         slippages={x: 0 for x in vt_symbols},
         sizes={x: 300 for x in vt_symbols},
@@ -27,8 +27,8 @@ if __name__ == '__main__':
     )
 
     setting = {
-        "boll_window": 1200,
-        "boll_dev": 30,
+        "boll_window": 2400,
+        "boll_dev": 5,
         "target_position": 1
     }
     engine.add_strategy(BackwardationRollingStrategy, setting)

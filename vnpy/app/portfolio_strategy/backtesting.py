@@ -145,7 +145,7 @@ class BacktestingEngine:
         self.dts.clear()
 
         # Load 30 days of data each time and allow for progress update
-        progress_delta = timedelta(days=30)
+        progress_delta = timedelta(days=300)
         total_delta = self.end - self.start
 
         for vt_symbol in self.vt_symbols:
@@ -194,10 +194,10 @@ class BacktestingEngine:
                         real_start = min(real_start, d.datetime)
                         real_end = max(real_end, d.datetime)
 
-                progress += progress_delta / total_delta
-                progress = min(progress, 1)
-                progress_bar = "#" * int(progress * 10)
-                self.output(f"{vt_symbol}加载进度：{progress_bar} [{progress:.0%}]")
+                # progress += progress_delta / total_delta
+                # progress = min(progress, 1)
+                # progress_bar = "#" * int(progress * 10)
+                # self.output(f"{vt_symbol}加载进度：{progress_bar} [{progress:.0%}]")
 
                 start = end + interval_delta
                 end += (progress_delta + interval_delta)

@@ -3,7 +3,7 @@ import os.path
 import pickle
 import pandas as pd
 from jqdatasdk import auth, is_auth, get_all_securities
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from datetime import datetime, time
 from dateutil import tz
 
@@ -21,8 +21,12 @@ class BackwardationRollingStrategy(StrategyTemplate):
     author = "Booksword"
     price_add = 15
     band_floor = 3
+    band_ceil = 8
     boll_window = 1200
-    boll_dev = 100
+    boll_multi_m = 1
+    boll_multi_fm = 100
+    boll_multi_q = 100
+
     target_position = 0
 
     current_spread = 0.0
@@ -32,8 +36,11 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
     parameters = [
         "band_floor",
+        "band_ceil",
         "boll_window",
-        "boll_dev",
+        "boll_multi_m",
+        "boll_multi_fm",
+        "boll_multi_q",
         "target_position"
     ]
     variables = [
@@ -62,11 +69,15 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         self.spread_count: int = 0
         self.contracts_same_day = 4
-        self.spread_datas: Dict[Tuple[int, int], np.array] = {
-            (i, j): np.zeros(self.boll_window) for i in range(self.contracts_same_day)
-            for j in range(self.contracts_same_day)
-        }
-        self.bounds: Dict[Tuple[int, int], Dict] = {}
+        self.spread_datas: np.ndarray = np.zeros((self.contracts_same_day, self.contracts_same_day, self.boll_window))
+        # Dict[Tuple[int, int], np.array] = {
+        #     (i, j): np.zeros(self.boll_window) for i in range(self.contracts_same_day)
+        #     for j in range(self.contracts_same_day)
+        # }
+        self.means: np.ndarray = np.zeros((self.contracts_same_day, self.contracts_same_day))
+        self.stds: np.ndarray = np.ones((self.contracts_same_day, self.contracts_same_day))
+        self.bands: np.ndarray = np.ones((self.contracts_same_day, self.contracts_same_day))
+        # Dict[Tuple[int, int], Dict] = {}
 
         self.parameter_date: Optional[datetime] = None
 
@@ -76,6 +87,9 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self._load_auxiliary_data()
         self.vt_symbols_today: List[str] = []
         self.expiries: List[datetime] = []
+        self.days_to_expiry: List[int] = []
+        self.expiries_ratio_to_main: List[float] = []
+        self.latest_spot = 0
 
         self.switches = {}
         self.switch_mapping = {}
@@ -130,18 +144,20 @@ class BackwardationRollingStrategy(StrategyTemplate):
             ].sort_values(by='end_date').index.to_list()
         self.vt_symbols_today = [x + '.CFFEX' for x in raw]
         self.expiries = [x.to_pydatetime() for x in self.contract_info.loc[raw, 'end_date']]
+        self.days_to_expiry = [(e - today).days for e in self.expiries]
+        self.expiries_ratio_to_main = [nd / self.days_to_expiry[1] for nd in self.days_to_expiry]
         # print(self.vt_symbols_today)
         # print([(x - today.replace(hour=0, minute=0, second=0)).days for x in self.expiries])
-        for i in range(self.contracts_same_day):
-            for j in range(self.contracts_same_day):
-                std = self.spread_datas[(i, j)].std()
-                mean = self.spread_datas[(i, j)].mean()
-                params = {
-                    'mean': mean,
-                    'std': std,
-                    'bandwidth': max(std, self.band_floor)
-                }
-                self.bounds[(i, j)] = params
+        # for i in range(self.contracts_same_day):
+        #     for j in range(self.contracts_same_day):
+        #         std = self.spread_datas[(i, j)].std()
+        #         mean = self.spread_datas[(i, j)].mean()
+        #         params = {
+        #             'mean': mean,
+        #             'std': std,
+        #             'bandwidth': max(std, self.band_floor)
+        #         }
+        #         self.bounds[(i, j)] = params
                 # print(today, (i, j), str(params))
         # print(today, self.bounds[(1, 2)])
         # print([self.get_pos(vt_s) for vt_s in self.vt_symbols_today])
@@ -182,54 +198,88 @@ class BackwardationRollingStrategy(StrategyTemplate):
         # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
         # if total > self.target_position:
         # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
-        ticks: Dict[str, TickData] = self.ticks
+        ticks: List[TickData] = [self.ticks[vt_s] for vt_s in self.vt_symbols_today]
 
+        backwardations = [t.ask_price_1 - self.latest_spot for t in ticks]
+        multipliers = np.array([
+            self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))), # for current month contract, adjust by expiry
+            1.0, # no adjustment for main contract
+            self.boll_multi_q * backwardations[1] / backwardations[2] * self.expiries_ratio_to_main[2],
+            self.boll_multi_q * backwardations[1] / backwardations[3] * self.expiries_ratio_to_main[3],
+        ])
+        sprd_2_main_bid = np.array([t.bid_price_1 - ticks[1].ask_price_1 for t in ticks])
+        sprd_2_main_ask = np.array([t.ask_price_1 - ticks[1].bid_price_1 for t in ticks])
+        normalized_bid = (sprd_2_main_bid - self.means[:, 1]) / (self.bands[:, 1] * self.boll_multi_m)
+        normalized_ask = (sprd_2_main_ask - self.means[:, 1]) / (self.bands[:, 1] * multipliers)
+        if self.days_to_expiry[0] < 2:
+            normalized_bid[0] = 100
+            normalized_ask[0] = 100
+        to_main = np.argwhere(normalized_bid > 1.0)
+        from_main_argmin = normalized_ask.argmin()
+        argmin = from_main_argmin if normalized_ask[from_main_argmin] < -1.0 else 1
+        idx_to_move = to_main if argmin == 1 else np.append(to_main, 1)
         holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
-        days_to_expiry_for_0 = (self.expiries[0] - tick.datetime).days
-        expiry_penalty_factor = np.exp(0.3 * (5 - min(5, days_to_expiry_for_0 - 2)))
-        for idx, vt_symbol in enumerate(self.vt_symbols_today):
-            current_pos_this_symbol = self.get_pos(vt_symbol)
-            if current_pos_this_symbol > 0:
-                tick_sprds = [ticks[s].ask_price_1 - ticks[vt_symbol].bid_price_1 for s in self.vt_symbols_today]
-                normalized = np.array([(ts - self.bounds[(s, idx)]['mean']) / self.bounds[(s, idx)]['bandwidth']
-                                       for s, ts in enumerate(tick_sprds)])
-                if days_to_expiry_for_0 < 2:
-                    argmin = np.argmin(normalized[1:]) + 1
+        for idx in idx_to_move:
+            if holdings[idx] > 0:
+                if argmin == 1:
+                    target_price = ticks[idx].bid_price_1 - self.means[idx, 1] - self.bands[idx, 1] * self.boll_multi_m
                 else:
-                    normalized[0] /= expiry_penalty_factor
-                    argmin = np.argmin(normalized)
+                    target_price = ticks[1].ask_price_1 + self.means[argmin, 1] + self.bands[argmin, 1] * multipliers[argmin]
+                self.buy(self.vt_symbols_today[argmin], target_price, holdings[idx])
+                close_price = ticks[idx].bid_price_1 - self.price_add
+                self.switches.update({
+                    self.vt_symbols_today[argmin]: [self.vt_symbols_today[idx], close_price, holdings[idx], 0]
+                })
 
-                if argmin == idx:
-                    return
-
-                if idx == 0 and days_to_expiry_for_0 < 2:
-                    print(tick.datetime.isoformat(), f'switch {vt_symbol} to {self.vt_symbols_today[argmin]}')
-                    target_price = ticks[self.vt_symbols_today[argmin]].ask_price_1 + self.price_add
-                    self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
-                    close_price = ticks[vt_symbol].bid_price_1 - self.price_add
-                    self.switches.update({
-                        self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
-                    })
-                    self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
-                elif normalized[argmin] < -self.boll_dev:
-                    # print(bar_timestamp.isoformat(), normalized, argmin)
-                    target_price = ticks[vt_symbol].bid_price_1 - self.bounds[(idx, argmin)]['mean'] - \
-                                   self.bounds[(argmin, idx)]['bandwidth'] * \
-                                   self.boll_dev * (expiry_penalty_factor if argmin == 0 else 1.0)
-
-                    self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
-                    close_price = ticks[vt_symbol].bid_price_1 - self.price_add
-                    self.switches.update({
-                        self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
-                    })
-                    self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
-                    # self.sell(vt_symbol, close_price, current_pos_this_symbol)
-                    print(f"{tick.datetime.isoformat()} - switch from idx {idx} "
-                          f"({vt_symbol}) @ {close_price:.2f} to idx"
-                          f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
+        # for idx, vt_symbol in enumerate(self.vt_symbols_today):
+        #     current_pos_this_symbol = self.get_pos(vt_symbol)
+        #     if current_pos_this_symbol > 0:
+        #         tick_sprds = np.array([ticks[s].ask_price_1 - ticks[vt_symbol].bid_price_1
+        #                                for s in self.vt_symbols_today])
+        #         means = self.means[:, idx]
+        #         stds = self.stds[:, idx]
+        #         bws = self.bands[:, idx]
+        #         print(f"tick spreads to {vt_symbol}: {str(tick_sprds)}, means: {str(means)}, stds: {str(stds)}, "
+        #               f"bandwidths: {str(bws)}")
+        #         normalized = np.array([(ts - self.means[s, idx]) / self.bands[s, idx] for s, ts in enumerate(tick_sprds)])
+        #         if self.days_to_expiry[0] < 2:
+        #             argmin = np.argmin(normalized[1:]) + 1
+        #         else:
+        #             normalized[0] /= expiry_penalty_factor
+        #             argmin = np.argmin(normalized)
+        #
+        #         if argmin == idx:
+        #             return
+        #         if idx == 0 and days_to_expiry_for_0 < 2:
+        #             print(tick.datetime.isoformat(), f'switch {vt_symbol} to {self.vt_symbols_today[argmin]}')
+        #             target_price = ticks[self.vt_symbols_today[argmin]].ask_price_1 + self.price_add
+        #             self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+        #             close_price = ticks[vt_symbol].bid_price_1 - self.price_add
+        #             self.switches.update({
+        #                 self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
+        #             })
+        #             self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
+        #         elif normalized[argmin] < self.boll_dev:
+        #             # print(bar_timestamp.isoformat(), normalized, argmin)
+        #             target_price = ticks[vt_symbol].bid_price_1 - self.means[idx, argmin] - \
+        #                            self.bands[argmin, idx] * self.boll_dev * \
+        #                            (expiry_penalty_factor if argmin == 0 else 1.0)
+        #
+        #             self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+        #             close_price = ticks[vt_symbol].bid_price_1 - self.price_add
+        #             self.switches.update({
+        #                 self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
+        #             })
+        #             self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
+        #             # self.sell(vt_symbol, close_price, current_pos_this_symbol)
+        #             print(f"{tick.datetime.isoformat()} - switch from idx {idx} "
+        #                   f"({vt_symbol}) @ {close_price:.2f} to idx"
+        #                   f" {argmin} ({self.vt_symbols_today[argmin]} @{target_price:.2f})")
 
     def on_bar(self, bar: BarData) -> None:
         self.minute_bars[bar.vt_symbol] = bar
+        if bar.vt_symbol == self.vt_symbol_spot:
+            self.latest_spot = bar.close_price
         # print(bar.datetime.isoformat(), bar.vt_symbol, bar.open_price, bar.high_price, bar.low_price, bar.close_price)
         if bar.datetime > self.last_bar_time:
             self.last_bar_time = bar.datetime
@@ -242,83 +292,108 @@ class BackwardationRollingStrategy(StrategyTemplate):
     def on_bars(self):
         """"""
         # self.cancel_all()
-        bars = self.minute_bars
-        bar_timestamp = bars[self.vt_symbols_today[0]].datetime
+        bars: List[BarData] = [self.minute_bars[vt_s] for vt_s in self.vt_symbols_today]
+        bar_timestamp = bars[0].datetime
         for i in range(self.contracts_same_day):
-            si = self.vt_symbols_today[i]
-            # barsi = self.minute_bars[si]
-            # print(barsi.datetime.isoformat(), barsi.vt_symbol, barsi.open_price, barsi.high_price, barsi.low_price,
-            #       barsi.close_price)
             for j in range(self.contracts_same_day):
-                sj = self.vt_symbols_today[j]
-                current_spread = bars[si].close_price - bars[sj].close_price
-                self.spread_datas[(i, j)][:-1] = self.spread_datas[(i, j)][1:]
-                self.spread_datas[(i, j)][-1] = current_spread
+                current_spread = bars[i].close_price - bars[j].close_price
+                self.spread_datas[i, j, :-1] = self.spread_datas[i, j, 1:]
+                self.spread_datas[i, j, -1] = current_spread
+                self.means[i, j] = self.spread_datas[i, j].mean()
+                self.stds[i, j] = self.spread_datas[i, j].std()
+                self.bands[i, j] = np.clip(self.stds[i, j], self.band_floor, self.band_ceil)
 
-        if not self.trading:
+        if not self.trading or bool(self.ticks) or not bool(self.minute_bars) or bool(self.switches):
             return
+
         holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
-        days_to_expiry_for_0 = (self.expiries[0] - bar_timestamp).days
 
-        if not bool(self.ticks) and bool(self.minute_bars) and not bool(self.switches):
-            expiry_penalty_factor = np.exp(0.3 * (5 - min(5, days_to_expiry_for_0 - 2)))
-            # total = sum(holdings)
-            # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
-            # if total > self.target_position:
-            # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
-            for idx, vt_symbol in enumerate(self.vt_symbols_today):
-                current_pos_this_symbol = self.get_pos(vt_symbol)
-                if current_pos_this_symbol > 0:
-                    tick_sprds = [bars[s].close_price - bars[vt_symbol].close_price for s in self.vt_symbols_today]
-                    normalized = np.array([(ts-self.bounds[(s, idx)]['mean'])/self.bounds[(s, idx)]['bandwidth']
-                                           for s, ts in enumerate(tick_sprds)])
-                    if days_to_expiry_for_0 < 2:
-                        argmin = np.argmin(normalized[1:]) + 1
-                    else:
-                        normalized[0] /= expiry_penalty_factor
-                        argmin = np.argmin(normalized)
-
-                    if argmin == idx:
-                        continue
-
-                    if idx == 0 and days_to_expiry_for_0 < 2:
-                        target_price = bars[self.vt_symbols_today[argmin]].close_price + self.price_add
-                        self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
-                        close_price = bars[vt_symbol].close_price - self.price_add
-                        self.switches.update({
-                            self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
-                        })
-                        self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
-                    elif normalized[argmin] < -self.boll_dev:
-                        # print(bar_timestamp.isoformat(), normalized, argmin)
-                        target_price = bars[vt_symbol].close_price - self.bounds[(idx, argmin)]['mean'] - \
-                                       self.bounds[(argmin, idx)]['bandwidth'] * \
-                                       self.boll_dev * (expiry_penalty_factor if argmin == 0 else 1)
-
-                        self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
-                        close_price = bars[vt_symbol].close_price - self.price_add
-                        self.switches.update({
-                            self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
-                        })
-                        self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
-        # else:
-        #     pos_0 = self.get_pos(self.vt_symbols_today[0])
-        #     if pos_0 > 0 and days_to_expiry_for_0 < 2:
-        #         self.buy(self.vt_symbols_today[1], bars[self.vt_symbols_today[1]].close_price + self.price_add, pos_0)
-        #         close_price = bars[self.vt_symbols_today[0]].close_price - self.price_add
-        #         self.switches.update({self.vt_symbols_today[1]: (self.vt_symbols_today[0], close_price)})
+        backwardations = [t.close_price - self.latest_spot for t in bars]
+        multipliers = np.array([
+            self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))),
+            # for current month contract, adjust by expiry
+            1.0,  # no adjustment for main contract
+            self.boll_multi_q * backwardations[1] / backwardations[2] * self.expiries_ratio_to_main[2],
+            self.boll_multi_q * backwardations[1] / backwardations[3] * self.expiries_ratio_to_main[3],
+        ])
+        sprd_2_main_bid = np.array([t.close_price - bars[1].close_price for t in bars])
+        sprd_2_main_ask = np.array([t.close_price - bars[1].close_price for t in bars])
+        normalized_bid = (sprd_2_main_bid - self.means[:, 1]) / (self.bands[:, 1] * self.boll_multi_m)
+        normalized_ask = (sprd_2_main_ask - self.means[:, 1]) / (self.bands[:, 1] * multipliers)
+        if self.days_to_expiry[0] < 2:
+            normalized_bid[0] = 100
+            normalized_ask[0] = 100
+        to_main = np.argwhere(normalized_bid > 1.0)
+        from_main_argmin = normalized_ask.argmin()
+        argmin = from_main_argmin if normalized_ask[from_main_argmin] < -1.0 else 1
+        idx_to_move = to_main if argmin == 1 else np.append(to_main, 1)
+        for idx in idx_to_move:
+            if holdings[idx] > 0:
+                if argmin == 1:
+                    target_price = bars[idx].close_price - self.means[idx, 1] - self.bands[idx, 1] * self.boll_multi_m
+                else:
+                    target_price = bars[1].close_price + self.means[argmin, 1] + self.bands[argmin, 1] * multipliers[
+                        argmin]
+                self.buy(self.vt_symbols_today[argmin], target_price, holdings[idx])
+                close_price = bars[idx].close_price - self.price_add
+                self.switches.update({
+                    self.vt_symbols_today[argmin]: [self.vt_symbols_today[idx], close_price, holdings[idx], 0]
+                })
+        # days_to_expiry_for_0 = (self.expiries[0] - bar_timestamp).days
+        #
+        #
+        # expiry_penalty_factor = np.exp(0.3 * (5 - min(5, days_to_expiry_for_0 - 2)))
+        # # total = sum(holdings)
+        # # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
+        # # if total > self.target_position:
+        # # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
+        # for idx, vt_symbol in enumerate(self.vt_symbols_today):
+        #     current_pos_this_symbol = self.get_pos(vt_symbol)
+        #     if current_pos_this_symbol > 0:
+        #         tick_sprds = [bars[s].close_price - bars[vt_symbol].close_price for s in self.vt_symbols_today]
+        #         normalized = np.array([(ts-self.means[(s, idx)])/self.bands[s, idx]
+        #                                for s, ts in enumerate(tick_sprds)])
+        #         if days_to_expiry_for_0 < 2:
+        #             argmin = np.argmin(normalized[1:]) + 1
+        #         else:
+        #             normalized[0] /= expiry_penalty_factor
+        #             argmin = np.argmin(normalized)
+        #
+        #         if argmin == idx:
+        #             continue
+        #
+        #         if idx == 0 and days_to_expiry_for_0 < 2:
+        #             target_price = bars[self.vt_symbols_today[argmin]].close_price + self.price_add
+        #             self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+        #             close_price = bars[vt_symbol].close_price - self.price_add
+        #             self.switches.update({
+        #                 self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
+        #             })
+        #             self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
+        #         elif normalized[argmin] < -self.boll_dev:
+        #             # print(bar_timestamp.isoformat(), normalized, argmin)
+        #             target_price = bars[vt_symbol].close_price - self.means[idx, argmin] - \
+        #                            self.bands[argmin, idx] * self.boll_dev * \
+        #                            (expiry_penalty_factor if argmin == 0 else 1)
+        #
+        #             self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
+        #             close_price = bars[vt_symbol].close_price - self.price_add
+        #             self.switches.update({
+        #                 self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
+        #             })
+        #             self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
 
         if sum(holdings) < self.target_position:
             print("buy future")
             self.buy(
-                self.vt_symbols_today[1], bars[self.vt_symbols_today[1]].close_price + self.price_add,
+                self.vt_symbols_today[1], bars[1].close_price + self.price_add,
                 volume=self.target_position-sum(holdings)
             )
 
         short_spot_pos = self.get_pos(self.vt_symbol_spot)
         if short_spot_pos != -self.target_position:
             print(bar_timestamp.isoformat(), " - short spot")
-            self.short(self.vt_symbol_spot, bars[self.vt_symbol_spot].close_price - self.price_add,
+            self.short(self.vt_symbol_spot, self.minute_bars[self.vt_symbol_spot].close_price - self.price_add,
                        abs(-self.target_position - short_spot_pos))
 
         self.put_event()
