@@ -21,7 +21,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
     author = "Booksword"
     price_add = 15
     band_floor = 3
-    band_ceil = 8
+    band_ceil = 100
     boll_window = 1200
     boll_multi_m = 1
     boll_multi_fm = 100
@@ -58,7 +58,6 @@ class BackwardationRollingStrategy(StrategyTemplate):
     ):
         """"""
         super().__init__(strategy_engine, strategy_name, vt_symbols, setting)
-
         self.bgs: Dict[str, BarGenerator] = {}
         self.targets: Dict[str, int] = {}
         self.last_tick_time: Optional[datetime] = None
@@ -84,6 +83,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self.symbol_mapping: Dict[str, str] = {}
         self.contract_info = None
         self.vt_symbol_spot = vt_symbols[0]
+        self.debug_file = None
         self._load_auxiliary_data()
         self.vt_symbols_today: List[str] = []
         self.expiries: List[datetime] = []
@@ -122,6 +122,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         my_contracts.start_date = my_contracts.start_date.dt.tz_localize('Asia/Shanghai')
         my_contracts.end_date = my_contracts.end_date.dt.tz_localize('Asia/Shanghai')
         self.contract_info = my_contracts.set_index('name').drop(['IF8888', 'IF9999'])
+        self.debug_file = open(os.path.join(cache_path, "debug.txt"), "w")
 
     def on_init(self):
         """
@@ -145,7 +146,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self.vt_symbols_today = [x + '.CFFEX' for x in raw]
         self.expiries = [x.to_pydatetime() for x in self.contract_info.loc[raw, 'end_date']]
         self.days_to_expiry = [(e - today).days for e in self.expiries]
-        self.expiries_ratio_to_main = [nd / self.days_to_expiry[1] for nd in self.days_to_expiry]
+        self.expiries_ratio_to_main = [self.days_to_expiry[1] / max(1, nd) for nd in self.days_to_expiry]
         # print(self.vt_symbols_today)
         # print([(x - today.replace(hour=0, minute=0, second=0)).days for x in self.expiries])
         # for i in range(self.contracts_same_day):
@@ -166,6 +167,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
         """
         Callback when strategy is stopped.
         """
+        if self.debug_file is not None:
+            self.debug_file.close()
         self.write_log("策略停止")
 
     def on_tick(self, tick: TickData):
@@ -200,36 +203,58 @@ class BackwardationRollingStrategy(StrategyTemplate):
         # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
         ticks: List[TickData] = [self.ticks[vt_s] for vt_s in self.vt_symbols_today]
 
-        backwardations = [t.ask_price_1 - self.latest_spot for t in ticks]
+        backwardations = [min(-5.0, t.ask_price_1 - self.latest_spot) for t in ticks]
         multipliers = np.array([
             self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))), # for current month contract, adjust by expiry
             1.0, # no adjustment for main contract
-            self.boll_multi_q * backwardations[1] / backwardations[2] * self.expiries_ratio_to_main[2],
-            self.boll_multi_q * backwardations[1] / backwardations[3] * self.expiries_ratio_to_main[3],
+            self.boll_multi_q * backwardations[1] / backwardations[2] / self.expiries_ratio_to_main[2],
+            self.boll_multi_q * backwardations[1] / backwardations[3] / self.expiries_ratio_to_main[3],
         ])
         sprd_2_main_bid = np.array([t.bid_price_1 - ticks[1].ask_price_1 for t in ticks])
         sprd_2_main_ask = np.array([t.ask_price_1 - ticks[1].bid_price_1 for t in ticks])
         normalized_bid = (sprd_2_main_bid - self.means[:, 1]) / (self.bands[:, 1] * self.boll_multi_m)
         normalized_ask = (sprd_2_main_ask - self.means[:, 1]) / (self.bands[:, 1] * multipliers)
         if self.days_to_expiry[0] < 2:
-            normalized_bid[0] = 100
-            normalized_ask[0] = 100
-        to_main = np.argwhere(normalized_bid > 1.0)
+            normalized_bid[0] = 100000
+            normalized_ask[0] = 100000
+
+        to_main = np.argwhere(normalized_bid > 1.0).flatten()
         from_main_argmin = normalized_ask.argmin()
         argmin = from_main_argmin if normalized_ask[from_main_argmin] < -1.0 else 1
         idx_to_move = to_main if argmin == 1 else np.append(to_main, 1)
         holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
+        self.debug_file.write(tick.datetime.isoformat() + "\n")
+        self.debug_file.write(f"backwardations: {str(backwardations)}\n")
+        for t in ticks:
+            self.debug_file.write(f"{t.vt_symbol}: {t.bid_price_1}, {t.ask_price_1}  ")
+        self.debug_file.write('\n')
+        self.debug_file.write(f"days_to_expiry: {str(self.days_to_expiry)}\n")
+        self.debug_file.write(f"multipliers: {str(multipliers)}\n")
+        self.debug_file.write(f"sprd_2_main_bid: {str(sprd_2_main_bid)}\n")
+        self.debug_file.write(f"sprd_2_main_ask: {str(sprd_2_main_ask)}\n")
+        self.debug_file.write(f"mean: {str(self.means[:, 1])}\n")
+        self.debug_file.write(f"std: {str(self.stds[:, 1])}\n")
+        self.debug_file.write(f"band: {str(self.bands[:, 1])}\n")
+        self.debug_file.write(f"normalized_bid: {str(normalized_bid)}\n")
+        self.debug_file.write(f"normalized_ask: {str(normalized_ask)}\n")
+
         for idx in idx_to_move:
             if holdings[idx] > 0:
-                if argmin == 1:
+                if self.days_to_expiry[idx] < 2:
+                    target_price = ticks[argmin].ask_price_1 + self.price_add
+                elif argmin == 1:
                     target_price = ticks[idx].bid_price_1 - self.means[idx, 1] - self.bands[idx, 1] * self.boll_multi_m
                 else:
                     target_price = ticks[1].ask_price_1 + self.means[argmin, 1] + self.bands[argmin, 1] * multipliers[argmin]
+                # target_price = np.floor(target_price / 0.2) * 0.2
                 self.buy(self.vt_symbols_today[argmin], target_price, holdings[idx])
                 close_price = ticks[idx].bid_price_1 - self.price_add
+
                 self.switches.update({
                     self.vt_symbols_today[argmin]: [self.vt_symbols_today[idx], close_price, holdings[idx], 0]
                 })
+                self.switch_mapping[self.vt_symbols_today[idx]] = self.vt_symbols_today[argmin]
+                self.debug_file.write(f"{self.vt_symbols_today[idx]}@{close_price}->{self.vt_symbols_today[argmin]}@{target_price}\n")
 
         # for idx, vt_symbol in enumerate(self.vt_symbols_today):
         #     current_pos_this_symbol = self.get_pos(vt_symbol)
@@ -294,6 +319,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         # self.cancel_all()
         bars: List[BarData] = [self.minute_bars[vt_s] for vt_s in self.vt_symbols_today]
         bar_timestamp = bars[0].datetime
+        # print(bar_timestamp.isoformat())
         for i in range(self.contracts_same_day):
             for j in range(self.contracts_same_day):
                 current_spread = bars[i].close_price - bars[j].close_price
@@ -302,19 +328,37 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 self.means[i, j] = self.spread_datas[i, j].mean()
                 self.stds[i, j] = self.spread_datas[i, j].std()
                 self.bands[i, j] = np.clip(self.stds[i, j], self.band_floor, self.band_ceil)
-
-        if not self.trading or bool(self.ticks) or not bool(self.minute_bars) or bool(self.switches):
+        if not self.trading:
             return
 
         holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
 
-        backwardations = [t.close_price - self.latest_spot for t in bars]
+        if sum(holdings) < self.target_position:
+            print(bar_timestamp.isoformat(), " - buy future")
+            self.buy(
+                self.vt_symbols_today[1], bars[1].close_price + self.price_add,
+                volume=self.target_position-sum(holdings)
+            )
+
+        short_spot_pos = self.get_pos(self.vt_symbol_spot)
+        if short_spot_pos != -self.target_position:
+            print(bar_timestamp.isoformat(), " - short spot")
+            self.short(self.vt_symbol_spot, self.minute_bars[self.vt_symbol_spot].close_price - self.price_add,
+                       abs(-self.target_position - short_spot_pos))
+
+
+        if bool(self.ticks) or not bool(self.minute_bars) or bool(self.switches):
+            if not bool(self.ticks):
+                print(bar_timestamp.isoformat(), 'here')
+            self.put_event()
+            return
+        backwardations = [min(-5.0, t.close_price - self.latest_spot) for t in bars]
         multipliers = np.array([
             self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))),
             # for current month contract, adjust by expiry
             1.0,  # no adjustment for main contract
-            self.boll_multi_q * backwardations[1] / backwardations[2] * self.expiries_ratio_to_main[2],
-            self.boll_multi_q * backwardations[1] / backwardations[3] * self.expiries_ratio_to_main[3],
+            self.boll_multi_q * backwardations[1] / backwardations[2] / self.expiries_ratio_to_main[2],
+            self.boll_multi_q * backwardations[1] / backwardations[3] / self.expiries_ratio_to_main[3],
         ])
         sprd_2_main_bid = np.array([t.close_price - bars[1].close_price for t in bars])
         sprd_2_main_ask = np.array([t.close_price - bars[1].close_price for t in bars])
@@ -323,22 +367,43 @@ class BackwardationRollingStrategy(StrategyTemplate):
         if self.days_to_expiry[0] < 2:
             normalized_bid[0] = 100
             normalized_ask[0] = 100
-        to_main = np.argwhere(normalized_bid > 1.0)
+        to_main = np.argwhere(normalized_bid > 1.0).flatten()
         from_main_argmin = normalized_ask.argmin()
+        self.debug_file.write(bar_timestamp.isoformat() + "\n")
+        self.debug_file.write(f"backwardations: {str(backwardations)}\n")
+        for t in bars:
+            self.debug_file.write(f"{t.vt_symbol}: {t.close_price}, {t.close_price}  ")
+        self.debug_file.write('\n')
+        self.debug_file.write(f"days_to_expiry: {str(self.days_to_expiry)}\n")
+        self.debug_file.write(f"multipliers: {str(multipliers)}\n")
+        self.debug_file.write(f"sprd_2_main_bid: {str(sprd_2_main_bid)}\n")
+        self.debug_file.write(f"sprd_2_main_ask: {str(sprd_2_main_ask)}\n")
+        self.debug_file.write(f"mean: {str(self.means[:, 1])}\n")
+        self.debug_file.write(f"std: {str(self.stds[:, 1])}\n")
+        self.debug_file.write(f"band: {str(self.bands[:, 1])}\n")
+        self.debug_file.write(f"normalized_bid: {str(normalized_bid)}\n")
+        self.debug_file.write(f"normalized_ask: {str(normalized_ask)}\n")
         argmin = from_main_argmin if normalized_ask[from_main_argmin] < -1.0 else 1
         idx_to_move = to_main if argmin == 1 else np.append(to_main, 1)
         for idx in idx_to_move:
             if holdings[idx] > 0:
-                if argmin == 1:
+                if self.days_to_expiry[idx] < 2:
+                    target_price = bars[argmin].close_price + self.price_add
+                elif argmin == 1:
                     target_price = bars[idx].close_price - self.means[idx, 1] - self.bands[idx, 1] * self.boll_multi_m
                 else:
                     target_price = bars[1].close_price + self.means[argmin, 1] + self.bands[argmin, 1] * multipliers[
                         argmin]
+                target_price = np.floor(target_price/0.2) * 0.2
                 self.buy(self.vt_symbols_today[argmin], target_price, holdings[idx])
                 close_price = bars[idx].close_price - self.price_add
                 self.switches.update({
                     self.vt_symbols_today[argmin]: [self.vt_symbols_today[idx], close_price, holdings[idx], 0]
                 })
+                self.switch_mapping[self.vt_symbols_today[idx]] = self.vt_symbols_today[argmin]
+                self.debug_file.write(
+                    f"{self.vt_symbols_today[idx]}@{close_price}->{self.vt_symbols_today[argmin]}@{target_price}\n")
+        self.put_event()
         # days_to_expiry_for_0 = (self.expiries[0] - bar_timestamp).days
         #
         #
@@ -383,21 +448,6 @@ class BackwardationRollingStrategy(StrategyTemplate):
         #             })
         #             self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
 
-        if sum(holdings) < self.target_position:
-            print("buy future")
-            self.buy(
-                self.vt_symbols_today[1], bars[1].close_price + self.price_add,
-                volume=self.target_position-sum(holdings)
-            )
-
-        short_spot_pos = self.get_pos(self.vt_symbol_spot)
-        if short_spot_pos != -self.target_position:
-            print(bar_timestamp.isoformat(), " - short spot")
-            self.short(self.vt_symbol_spot, self.minute_bars[self.vt_symbol_spot].close_price - self.price_add,
-                       abs(-self.target_position - short_spot_pos))
-
-        self.put_event()
-
     def update_order(self, order: OrderData) -> None:
         super(BackwardationRollingStrategy, self).update_order(order)
         # if order.datetime.replace(tzinfo=None) > datetime(2021, 3, 5):
@@ -414,6 +464,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
             self.switches[trade.vt_symbol][2] -= trade.volume
             self.sell(from_vt_symbol, close_price, trade.volume)
             self.switches[trade.vt_symbol][3] += trade.volume
+            self.debug_file.write(
+                f"{from_vt_symbol}->{trade.vt_symbol}@{trade.price}\n")
 
         if trade.vt_symbol in self.switch_mapping:
             to_vt_symbol = self.switch_mapping[trade.vt_symbol]
@@ -421,4 +473,6 @@ class BackwardationRollingStrategy(StrategyTemplate):
             if self.switches[to_vt_symbol][2] == 0 and self.switches[to_vt_symbol][3] == 0:
                 del self.switches[to_vt_symbol]
                 del self.switch_mapping[trade.vt_symbol]
+            self.debug_file.write(
+                f"{trade.vt_symbol}@{trade.price}->{to_vt_symbol}\n")
 

@@ -19,6 +19,7 @@ from vnpy.trader.utility import round_to, extract_vt_symbol
 from .template import StrategyTemplate
 
 
+
 INTERVAL_DELTA_MAP = {
     Interval.TICK: timedelta(milliseconds=1),
     Interval.MINUTE: timedelta(minutes=1),
@@ -219,17 +220,22 @@ class BacktestingEngine:
         ix = 0
 
         for ix, dt in enumerate(dts):
-            if self.datetime and dt.day != self.datetime.day:
-                day_count += 1
-                if day_count >= self.days:
-                    break
-
+            # if self.datetime and dt.day != self.datetime.day:
+            #     print(self.datetime.isoformat(), dt.isoformat())
+            #     day_count += 1
+            #     if day_count >= self.days:
+            #         break
             try:
                 self.new_data(dt)
             except Exception:
                 self.output("触发异常，回测终止")
                 self.output(traceback.format_exc())
                 return
+
+            if ix != 0 and dts[ix-1].day != dts[ix].day:
+                day_count += 1
+                if day_count >= self.days:
+                    break
 
         self.strategy.inited = True
         self.output("策略初始化完成")
@@ -239,7 +245,7 @@ class BacktestingEngine:
         self.output("开始回放历史数据")
 
         # Use the rest of history data for running backtesting
-        for dt in dts[ix:]:
+        for dt in dts[ix+1:]:
             try:
                 self.new_data(dt)
             except Exception:
