@@ -557,9 +557,7 @@ class BacktestingEngine:
         """
         while bool(self.limit_order_process_queue):
             order: OrderData = self.active_limit_orders.get(self.limit_order_process_queue.popleft(), None)
-            if order is None:
-                print("Dont Know why this is in queue")
-            if not order.vt_symbol in self.history_data[dt]:
+            if order is None or not order.vt_symbol in self.history_data[dt]:
                 continue
             mk_data = self.history_data[dt][order.vt_symbol]
 

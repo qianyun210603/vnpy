@@ -28,6 +28,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
     boll_multi_q = 100
 
     target_position = 0
+    start_contract_no = -1
+    pivot_contract_no = 1
 
     current_spread = 0.0
     boll_mid = 0.0
@@ -41,7 +43,9 @@ class BackwardationRollingStrategy(StrategyTemplate):
         "boll_multi_m",
         "boll_multi_fm",
         "boll_multi_q",
-        "target_position"
+        "target_position",
+        "start_contract_no",
+        "pivot_contract_no",
     ]
     variables = [
         "boll_mid",
@@ -58,6 +62,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
     ):
         """"""
         super().__init__(strategy_engine, strategy_name, vt_symbols, setting)
+        assert setting['pivot_contract_no'] in (0, 1), "pivot contract no must be 0 or 1"
         self.bgs: Dict[str, BarGenerator] = {}
         self.targets: Dict[str, int] = {}
         self.last_tick_time: Optional[datetime] = None
@@ -146,7 +151,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self.vt_symbols_today = [x + '.CFFEX' for x in raw]
         self.expiries = [x.to_pydatetime() for x in self.contract_info.loc[raw, 'end_date']]
         self.days_to_expiry = [(e - today).days for e in self.expiries]
-        self.expiries_ratio_to_main = [self.days_to_expiry[1] / max(1, nd) for nd in self.days_to_expiry]
+        self.expiries_ratio_to_main = [self.days_to_expiry[self.pivot_contract_no] / max(1, nd) for nd in self.days_to_expiry]
         # print(self.vt_symbols_today)
         # print([(x - today.replace(hour=0, minute=0, second=0)).days for x in self.expiries])
         # for i in range(self.contracts_same_day):
@@ -203,17 +208,27 @@ class BackwardationRollingStrategy(StrategyTemplate):
         # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
         ticks: List[TickData] = [self.ticks[vt_s] for vt_s in self.vt_symbols_today]
 
-        backwardations = [min(-5.0, t.ask_price_1 - self.latest_spot) for t in ticks]
-        multipliers = np.array([
-            self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))), # for current month contract, adjust by expiry
-            1.0, # no adjustment for main contract
-            self.boll_multi_q * backwardations[1] / backwardations[2] / self.expiries_ratio_to_main[2],
-            self.boll_multi_q * backwardations[1] / backwardations[3] / self.expiries_ratio_to_main[3],
-        ])
+        backwardations = [min(-1.0, t.ask_price_1 - self.latest_spot) for t in ticks]
         sprd_2_main_bid = np.array([t.bid_price_1 - ticks[1].ask_price_1 for t in ticks])
         sprd_2_main_ask = np.array([t.ask_price_1 - ticks[1].bid_price_1 for t in ticks])
-        normalized_bid = (sprd_2_main_bid - self.means[:, 1]) / (self.bands[:, 1] * self.boll_multi_m)
-        normalized_ask = (sprd_2_main_ask - self.means[:, 1]) / (self.bands[:, 1] * multipliers)
+
+        if self.pivot_contract_no == 1:
+            multipliers = np.array([
+                self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))), # for current month contract, adjust by expiry
+                1.0, # no adjustment for main contract
+                self.boll_multi_q * backwardations[1] / backwardations[2] / self.expiries_ratio_to_main[2],
+                self.boll_multi_q * backwardations[1] / backwardations[3] / self.expiries_ratio_to_main[3],
+            ])
+        else:
+            multipliers = np.array([
+                1.0, # for current month contract, adjust by expiry
+                self.boll_multi_q * backwardations[0] / backwardations[1] / self.expiries_ratio_to_main[1],
+                self.boll_multi_q * backwardations[0] / backwardations[2] / self.expiries_ratio_to_main[2],
+                self.boll_multi_q * backwardations[0] / backwardations[3] / self.expiries_ratio_to_main[3],
+            ])
+
+        normalized_bid = (sprd_2_main_bid - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * self.boll_multi_m)
+        normalized_ask = (sprd_2_main_ask - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * multipliers)
         if self.days_to_expiry[0] < 2:
             normalized_bid[0] = 100000
             normalized_ask[0] = 100000
@@ -332,11 +347,17 @@ class BackwardationRollingStrategy(StrategyTemplate):
             return
 
         holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
+        backwardations = [min(-5.0, t.close_price - self.latest_spot) for t in bars]
+
 
         if sum(holdings) < self.target_position:
             print(bar_timestamp.isoformat(), " - buy future")
+            if self.start_contract_no < 0:
+                idx = np.argmin([b / d if d > 2 else np.inf for b, d in zip(backwardations, self.days_to_expiry)])
+            else:
+                idx = self.start_contract_no
             self.buy(
-                self.vt_symbols_today[1], bars[1].close_price + self.price_add,
+                self.vt_symbols_today[idx], bars[idx].close_price + self.price_add,
                 volume=self.target_position-sum(holdings)
             )
 
@@ -346,27 +367,35 @@ class BackwardationRollingStrategy(StrategyTemplate):
             self.short(self.vt_symbol_spot, self.minute_bars[self.vt_symbol_spot].close_price - self.price_add,
                        abs(-self.target_position - short_spot_pos))
 
-
         if bool(self.ticks) or not bool(self.minute_bars) or bool(self.switches):
-            if not bool(self.ticks):
-                print(bar_timestamp.isoformat(), 'here')
+            # if not bool(self.ticks):
+            #     print(bar_timestamp.isoformat(), 'here')
             self.put_event()
             return
-        backwardations = [min(-5.0, t.close_price - self.latest_spot) for t in bars]
-        multipliers = np.array([
-            self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))),
-            # for current month contract, adjust by expiry
-            1.0,  # no adjustment for main contract
-            self.boll_multi_q * backwardations[1] / backwardations[2] / self.expiries_ratio_to_main[2],
-            self.boll_multi_q * backwardations[1] / backwardations[3] / self.expiries_ratio_to_main[3],
-        ])
-        sprd_2_main_bid = np.array([t.close_price - bars[1].close_price for t in bars])
-        sprd_2_main_ask = np.array([t.close_price - bars[1].close_price for t in bars])
-        normalized_bid = (sprd_2_main_bid - self.means[:, 1]) / (self.bands[:, 1] * self.boll_multi_m)
-        normalized_ask = (sprd_2_main_ask - self.means[:, 1]) / (self.bands[:, 1] * multipliers)
+
+        if self.pivot_contract_no == 1:
+            multipliers = np.array([
+                self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))), # for current month contract, adjust by expiry
+                1.0, # no adjustment for main contract
+                self.boll_multi_q * backwardations[1] / backwardations[2] / self.expiries_ratio_to_main[2],
+                self.boll_multi_q * backwardations[1] / backwardations[3] / self.expiries_ratio_to_main[3],
+            ])
+        else:
+            multipliers = np.array([
+                1.0, # for current month contract, adjust by expiry
+                self.boll_multi_q * backwardations[0] / backwardations[1] / self.expiries_ratio_to_main[1],
+                self.boll_multi_q * backwardations[0] / backwardations[2] / self.expiries_ratio_to_main[2],
+                self.boll_multi_q * backwardations[0] / backwardations[3] / self.expiries_ratio_to_main[3],
+            ])
+
+        sprd_2_main_bid = np.array([t.close_price - bars[self.pivot_contract_no].close_price for t in bars])
+        sprd_2_main_ask = np.array([t.close_price - bars[self.pivot_contract_no].close_price for t in bars])
+        normalized_bid = (sprd_2_main_bid - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * self.boll_multi_m)
+        normalized_ask = (sprd_2_main_ask - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * multipliers)
         if self.days_to_expiry[0] < 2:
-            normalized_bid[0] = 100
-            normalized_ask[0] = 100
+            normalized_bid[0] = 100000
+            normalized_ask[0] = 100000
+
         to_main = np.argwhere(normalized_bid > 1.0).flatten()
         from_main_argmin = normalized_ask.argmin()
         self.debug_file.write(bar_timestamp.isoformat() + "\n")

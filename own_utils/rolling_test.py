@@ -16,7 +16,7 @@ if __name__ == '__main__':
 
     engine.set_parameters(
         vt_symbols=vt_symbols,
-        interval=Interval.TICK,
+        interval=Interval.MINUTE,
         intervals={'000300.SSE': Interval.MINUTE},
         start=datetime(2020, 12, 18),
         end=datetime(2021, 9, 30),
@@ -29,10 +29,12 @@ if __name__ == '__main__':
 
     setting = {
         "boll_window": 2400,
-        "boll_multi_m": 2000,
+        "boll_multi_m": 5000,
         "boll_multi_fm": 5000,
         "boll_multi_q": 5000,
-        "target_position": 1
+        "target_position": 1,
+        "start_contract_no": -1,
+        "pivot_contract_no": 1,
     }
     engine.add_strategy(BackwardationRollingStrategy, setting)
     engine.load_data()

@@ -169,6 +169,10 @@ class TradeData(BaseData):
         self.vt_orderid = f"{self.gateway_name}.{self.orderid}"
         self.vt_tradeid = f"{self.gateway_name}.{self.tradeid}"
 
+    def __str__(self):
+        return f"TRADE-{self.tradeid}: und={self.vt_symbol}, d={self.direction.value}, p={self.price}," \
+               f" dt={self.datetime.isoformat()}"
+
 
 @dataclass
 class PositionData(BaseData):
