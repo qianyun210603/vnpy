@@ -151,7 +151,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self.vt_symbols_today = [x + '.CFFEX' for x in raw]
         self.expiries = [x.to_pydatetime() for x in self.contract_info.loc[raw, 'end_date']]
         self.days_to_expiry = [(e - today).days for e in self.expiries]
-        self.expiries_ratio_to_main = [self.days_to_expiry[self.pivot_contract_no] / max(1, nd) for nd in self.days_to_expiry]
+        self.expiries_ratio_to_main = [max(1, self.days_to_expiry[self.pivot_contract_no]) / max(1, nd) for nd in self.days_to_expiry]
         # print(self.vt_symbols_today)
         # print([(x - today.replace(hour=0, minute=0, second=0)).days for x in self.expiries])
         # for i in range(self.contracts_same_day):
