@@ -29,12 +29,11 @@ if __name__ == '__main__':
 
     setting = {
         "boll_window": 2400,
-        "boll_multi_m": 5000,
-        "boll_multi_fm": 5000,
-        "boll_multi_q": 5000,
+        "boll_multi_m": 1,
+        "boll_multi_fm": 1,
+        "boll_multi_q": 3,
         "target_position": 1,
         "start_contract_no": -1,
-        "pivot_contract_no": 1,
     }
     engine.add_strategy(BackwardationRollingStrategy, setting)
     engine.load_data()

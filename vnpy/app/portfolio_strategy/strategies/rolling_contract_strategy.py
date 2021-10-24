@@ -4,7 +4,7 @@ import pickle
 import pandas as pd
 from jqdatasdk import auth, is_auth, get_all_securities
 from typing import List, Dict, Optional
-from datetime import datetime, time
+from datetime import datetime
 from dateutil import tz
 
 import numpy as np
@@ -29,7 +29,6 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
     target_position = 0
     start_contract_no = -1
-    pivot_contract_no = 1
 
     current_spread = 0.0
     boll_mid = 0.0
@@ -45,7 +44,6 @@ class BackwardationRollingStrategy(StrategyTemplate):
         "boll_multi_q",
         "target_position",
         "start_contract_no",
-        "pivot_contract_no",
     ]
     variables = [
         "boll_mid",
@@ -62,7 +60,6 @@ class BackwardationRollingStrategy(StrategyTemplate):
     ):
         """"""
         super().__init__(strategy_engine, strategy_name, vt_symbols, setting)
-        assert setting['pivot_contract_no'] in (0, 1), "pivot contract no must be 0 or 1"
         self.bgs: Dict[str, BarGenerator] = {}
         self.targets: Dict[str, int] = {}
         self.last_tick_time: Optional[datetime] = None
@@ -73,6 +70,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         self.spread_count: int = 0
         self.contracts_same_day = 4
+        self.indexes: np.ndarray = np.arange(self.contracts_same_day)
         self.spread_datas: np.ndarray = np.zeros((self.contracts_same_day, self.contracts_same_day, self.boll_window))
         # Dict[Tuple[int, int], np.array] = {
         #     (i, j): np.zeros(self.boll_window) for i in range(self.contracts_same_day)
@@ -84,6 +82,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         # Dict[Tuple[int, int], Dict] = {}
 
         self.parameter_date: Optional[datetime] = None
+        self.liquidity_adjust: np.ndarray = np.array([0.0, 0.0, 3, 10.0])
 
         self.symbol_mapping: Dict[str, str] = {}
         self.contract_info = None
@@ -92,7 +91,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         self._load_auxiliary_data()
         self.vt_symbols_today: List[str] = []
         self.expiries: List[datetime] = []
-        self.days_to_expiry: List[int] = []
+        self.days_to_expiry: np.ndarray = np.array([])
         self.expiries_ratio_to_main: List[float] = []
         self.latest_spot = 0
 
@@ -150,23 +149,8 @@ class BackwardationRollingStrategy(StrategyTemplate):
             ].sort_values(by='end_date').index.to_list()
         self.vt_symbols_today = [x + '.CFFEX' for x in raw]
         self.expiries = [x.to_pydatetime() for x in self.contract_info.loc[raw, 'end_date']]
-        self.days_to_expiry = [(e - today).days for e in self.expiries]
-        self.expiries_ratio_to_main = [max(1, self.days_to_expiry[self.pivot_contract_no]) / max(1, nd) for nd in self.days_to_expiry]
-        # print(self.vt_symbols_today)
-        # print([(x - today.replace(hour=0, minute=0, second=0)).days for x in self.expiries])
-        # for i in range(self.contracts_same_day):
-        #     for j in range(self.contracts_same_day):
-        #         std = self.spread_datas[(i, j)].std()
-        #         mean = self.spread_datas[(i, j)].mean()
-        #         params = {
-        #             'mean': mean,
-        #             'std': std,
-        #             'bandwidth': max(std, self.band_floor)
-        #         }
-        #         self.bounds[(i, j)] = params
-                # print(today, (i, j), str(params))
-        # print(today, self.bounds[(1, 2)])
-        # print([self.get_pos(vt_s) for vt_s in self.vt_symbols_today])
+        self.days_to_expiry = np.array([max((e - today).days, 1) for e in self.expiries])
+
 
     def on_stop(self):
         """
@@ -197,79 +181,85 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
         self.last_tick_time = tick.datetime
 
-        trading = self.trading and time(9, 31) < self.last_tick_time.time() < time(14, 55)
+        # trading = self.trading and time(9, 31) < self.last_tick_time.time() < time(14, 55)
 
-        if not trading or not all(vt_sym in self.ticks for vt_sym in self.vt_symbols_today) or bool(self.switches):
-            return
+        #if not trading or not all(vt_sym in self.ticks for vt_sym in self.vt_symbols_today) or bool(self.switches):
+            # return
 
         # total = sum(holdings)
         # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
         # if total > self.target_position:
         # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
-        ticks: List[TickData] = [self.ticks[vt_s] for vt_s in self.vt_symbols_today]
+        # ticks: List[TickData] = [self.ticks[vt_s] for vt_s in self.vt_symbols_today]
 
-        backwardations = [min(-1.0, t.ask_price_1 - self.latest_spot) for t in ticks]
-        sprd_2_main_bid = np.array([t.bid_price_1 - ticks[1].ask_price_1 for t in ticks])
-        sprd_2_main_ask = np.array([t.ask_price_1 - ticks[1].bid_price_1 for t in ticks])
-
-        if self.pivot_contract_no == 1:
-            multipliers = np.array([
-                self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))), # for current month contract, adjust by expiry
-                1.0, # no adjustment for main contract
-                self.boll_multi_q * backwardations[1] / backwardations[2] / self.expiries_ratio_to_main[2],
-                self.boll_multi_q * backwardations[1] / backwardations[3] / self.expiries_ratio_to_main[3],
-            ])
-        else:
-            multipliers = np.array([
-                1.0, # for current month contract, adjust by expiry
-                self.boll_multi_q * backwardations[0] / backwardations[1] / self.expiries_ratio_to_main[1],
-                self.boll_multi_q * backwardations[0] / backwardations[2] / self.expiries_ratio_to_main[2],
-                self.boll_multi_q * backwardations[0] / backwardations[3] / self.expiries_ratio_to_main[3],
-            ])
-
-        normalized_bid = (sprd_2_main_bid - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * self.boll_multi_m)
-        normalized_ask = (sprd_2_main_ask - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * multipliers)
-        if self.days_to_expiry[0] < 2:
-            normalized_bid[0] = 100000
-            normalized_ask[0] = 100000
-
-        to_main = np.argwhere(normalized_bid > 1.0).flatten()
-        from_main_argmin = normalized_ask.argmin()
-        argmin = from_main_argmin if normalized_ask[from_main_argmin] < -1.0 else 1
-        idx_to_move = to_main if argmin == 1 else np.append(to_main, 1)
-        holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
-        self.debug_file.write(tick.datetime.isoformat() + "\n")
-        self.debug_file.write(f"backwardations: {str(backwardations)}\n")
-        for t in ticks:
-            self.debug_file.write(f"{t.vt_symbol}: {t.bid_price_1}, {t.ask_price_1}  ")
-        self.debug_file.write('\n')
-        self.debug_file.write(f"days_to_expiry: {str(self.days_to_expiry)}\n")
-        self.debug_file.write(f"multipliers: {str(multipliers)}\n")
-        self.debug_file.write(f"sprd_2_main_bid: {str(sprd_2_main_bid)}\n")
-        self.debug_file.write(f"sprd_2_main_ask: {str(sprd_2_main_ask)}\n")
-        self.debug_file.write(f"mean: {str(self.means[:, 1])}\n")
-        self.debug_file.write(f"std: {str(self.stds[:, 1])}\n")
-        self.debug_file.write(f"band: {str(self.bands[:, 1])}\n")
-        self.debug_file.write(f"normalized_bid: {str(normalized_bid)}\n")
-        self.debug_file.write(f"normalized_ask: {str(normalized_ask)}\n")
-
-        for idx in idx_to_move:
-            if holdings[idx] > 0:
-                if self.days_to_expiry[idx] < 2:
-                    target_price = ticks[argmin].ask_price_1 + self.price_add
-                elif argmin == 1:
-                    target_price = ticks[idx].bid_price_1 - self.means[idx, 1] - self.bands[idx, 1] * self.boll_multi_m
-                else:
-                    target_price = ticks[1].ask_price_1 + self.means[argmin, 1] + self.bands[argmin, 1] * multipliers[argmin]
-                # target_price = np.floor(target_price / 0.2) * 0.2
-                self.buy(self.vt_symbols_today[argmin], target_price, holdings[idx])
-                close_price = ticks[idx].bid_price_1 - self.price_add
-
-                self.switches.update({
-                    self.vt_symbols_today[argmin]: [self.vt_symbols_today[idx], close_price, holdings[idx], 0]
-                })
-                self.switch_mapping[self.vt_symbols_today[idx]] = self.vt_symbols_today[argmin]
-                self.debug_file.write(f"{self.vt_symbols_today[idx]}@{close_price}->{self.vt_symbols_today[argmin]}@{target_price}\n")
+        # backwardations = [min(-1.0, t.ask_price_1 - self.latest_spot) for t in ticks]
+        # sprd_2_main_bid = np.array([t.bid_price_1 - ticks[self.pivot_contract_no].ask_price_1 for t in ticks])
+        # sprd_2_main_ask = np.array([t.ask_price_1 - ticks[self.pivot_contract_no].bid_price_1 for t in ticks])
+        #
+        # if self.pivot_contract_no == 1:
+        #     multipliers = np.array([
+        #         self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))), # for current month contract, adjust by expiry
+        #         1.0, # no adjustment for main contract
+        #         self.boll_multi_q * backwardations[1] / backwardations[2] / self.expiries_ratio_to_main[2],
+        #         self.boll_multi_q * backwardations[1] / backwardations[3] / self.expiries_ratio_to_main[3],
+        #     ])
+        # else:
+        #     multipliers = np.array([
+        #         1.0, # for current month contract, adjust by expiry
+        #         self.boll_multi_q * backwardations[0] / backwardations[1] / self.expiries_ratio_to_main[1],
+        #         self.boll_multi_q * backwardations[0] / backwardations[2] / self.expiries_ratio_to_main[2],
+        #         self.boll_multi_q * backwardations[0] / backwardations[3] / self.expiries_ratio_to_main[3],
+        #     ])
+        #
+        # normalized_bid = (sprd_2_main_bid - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * self.boll_multi_m)
+        # normalized_ask = (sprd_2_main_ask - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * multipliers)
+        # if self.days_to_expiry[0] < 2:
+        #     if self.pivot_contract_no == 1:
+        #         normalized_bid[0] = 100000
+        #         normalized_ask[0] = 100000
+        #     else:
+        #         normalized_bid[0] = 0
+        #         normalized_ask[0] = 0
+        #         normalized_ask[1] = min(normalized_ask[1], -1.01)
+        #         normalized_bid[1] = 0
+        #
+        # to_main = np.argwhere(normalized_bid > 1.0).flatten()
+        # from_main_argmin = normalized_ask.argmin()
+        # argmin = from_main_argmin if normalized_ask[from_main_argmin] < -1.0 else self.pivot_contract_no
+        # idx_to_move = to_main if argmin == self.pivot_contract_no else np.append(to_main, self.pivot_contract_no)
+        # holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
+        # self.debug_file.write(tick.datetime.isoformat() + "\n")
+        # self.debug_file.write(f"backwardations: {str(backwardations)}\n")
+        # for t in ticks:
+        #     self.debug_file.write(f"{t.vt_symbol}: {t.bid_price_1}, {t.ask_price_1}  ")
+        # self.debug_file.write('\n')
+        # self.debug_file.write(f"days_to_expiry: {str(self.days_to_expiry)}\n")
+        # self.debug_file.write(f"multipliers: {str(multipliers)}\n")
+        # self.debug_file.write(f"sprd_2_main_bid: {str(sprd_2_main_bid)}\n")
+        # self.debug_file.write(f"sprd_2_main_ask: {str(sprd_2_main_ask)}\n")
+        # self.debug_file.write(f"mean: {str(self.means[:, self.pivot_contract_no])}\n")
+        # self.debug_file.write(f"std: {str(self.stds[:, self.pivot_contract_no])}\n")
+        # self.debug_file.write(f"band: {str(self.bands[:, self.pivot_contract_no])}\n")
+        # self.debug_file.write(f"normalized_bid: {str(normalized_bid)}\n")
+        # self.debug_file.write(f"normalized_ask: {str(normalized_ask)}\n")
+        #
+        # for idx in idx_to_move:
+        #     if holdings[idx] > 0 and idx != argmin:
+        #         if self.days_to_expiry[idx] < 2:
+        #             target_price = ticks[argmin].ask_price_1 + self.price_add
+        #         elif argmin == self.pivot_contract_no:
+        #             target_price = ticks[idx].bid_price_1 - self.means[idx, self.pivot_contract_no] - self.bands[idx, self.pivot_contract_no] * self.boll_multi_m
+        #         else:
+        #             target_price = ticks[self.pivot_contract_no].ask_price_1 + self.means[argmin, self.pivot_contract_no] + self.bands[argmin, self.pivot_contract_no] * multipliers[argmin]
+        #         # target_price = np.floor(target_price / 0.2) * 0.2
+        #         self.buy(self.vt_symbols_today[argmin], target_price, holdings[idx])
+        #         close_price = ticks[idx].bid_price_1 - self.price_add
+        #
+        #         self.switches.update({
+        #             self.vt_symbols_today[argmin]: [self.vt_symbols_today[idx], close_price, holdings[idx], 0]
+        #         })
+        #         self.switch_mapping[self.vt_symbols_today[idx]] = self.vt_symbols_today[argmin]
+        #         self.debug_file.write(f"{self.vt_symbols_today[idx]}@{close_price}->{self.vt_symbols_today[argmin]}@{target_price}\n")
 
         # for idx, vt_symbol in enumerate(self.vt_symbols_today):
         #     current_pos_this_symbol = self.get_pos(vt_symbol)
@@ -331,7 +321,6 @@ class BackwardationRollingStrategy(StrategyTemplate):
 
     def on_bars(self):
         """"""
-        # self.cancel_all()
         bars: List[BarData] = [self.minute_bars[vt_s] for vt_s in self.vt_symbols_today]
         bar_timestamp = bars[0].datetime
         # print(bar_timestamp.isoformat())
@@ -347,15 +336,17 @@ class BackwardationRollingStrategy(StrategyTemplate):
             return
 
         holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
-        backwardations = [min(-5.0, t.close_price - self.latest_spot) for t in bars]
-
+        backwardations = np.array([t.close_price - self.latest_spot for t in bars])
+        unit_backwardations = backwardations / self.days_to_expiry
+        unit_backwardations[0] /= np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2)))
+        if self.days_to_expiry[0] < 2:
+            pivot = np.argmin(unit_backwardations[1:]) + 1
+        else:
+            pivot = np.argmin(unit_backwardations)
 
         if sum(holdings) < self.target_position:
             print(bar_timestamp.isoformat(), " - buy future")
-            if self.start_contract_no < 0:
-                idx = np.argmin([b / d if d > 2 else np.inf for b, d in zip(backwardations, self.days_to_expiry)])
-            else:
-                idx = self.start_contract_no
+            idx = pivot if self.start_contract_no < 0 else self.start_contract_no
             self.buy(
                 self.vt_symbols_today[idx], bars[idx].close_price + self.price_add,
                 volume=self.target_position-sum(holdings)
@@ -367,115 +358,91 @@ class BackwardationRollingStrategy(StrategyTemplate):
             self.short(self.vt_symbol_spot, self.minute_bars[self.vt_symbol_spot].close_price - self.price_add,
                        abs(-self.target_position - short_spot_pos))
 
-        if bool(self.ticks) or not bool(self.minute_bars) or bool(self.switches):
-            # if not bool(self.ticks):
-            #     print(bar_timestamp.isoformat(), 'here')
-            self.put_event()
-            return
+        backwardations_adjusts = (unit_backwardations - unit_backwardations[pivot]) * np.minimum(self.days_to_expiry[pivot], self.days_to_expiry) # the larger, should be more easier to pivot
+        liquidity_adjusts = self.liquidity_adjust + self.liquidity_adjust[pivot]
+        boll_multis = np.select([self.indexes < pivot, self.indexes > pivot], [self.boll_multi_fm, self.boll_multi_q], self.boll_multi_m)
 
-        if self.pivot_contract_no == 1:
-            multipliers = np.array([
-                self.boll_multi_fm * np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2))), # for current month contract, adjust by expiry
-                1.0, # no adjustment for main contract
-                self.boll_multi_q * backwardations[1] / backwardations[2] / self.expiries_ratio_to_main[2],
-                self.boll_multi_q * backwardations[1] / backwardations[3] / self.expiries_ratio_to_main[3],
-            ])
-        else:
-            multipliers = np.array([
-                1.0, # for current month contract, adjust by expiry
-                self.boll_multi_q * backwardations[0] / backwardations[1] / self.expiries_ratio_to_main[1],
-                self.boll_multi_q * backwardations[0] / backwardations[2] / self.expiries_ratio_to_main[2],
-                self.boll_multi_q * backwardations[0] / backwardations[3] / self.expiries_ratio_to_main[3],
-            ])
+        from_pivot_prices = bars[pivot].close_price + self.means[:, pivot] - self.bands[:, pivot] * boll_multis - liquidity_adjusts - backwardations_adjusts # the smaller, the more harder to move away from pivot
 
-        sprd_2_main_bid = np.array([t.close_price - bars[self.pivot_contract_no].close_price for t in bars])
-        sprd_2_main_ask = np.array([t.close_price - bars[self.pivot_contract_no].close_price for t in bars])
-        normalized_bid = (sprd_2_main_bid - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * self.boll_multi_m)
-        normalized_ask = (sprd_2_main_ask - self.means[:, self.pivot_contract_no]) / (self.bands[:, self.pivot_contract_no] * multipliers)
+        to_pivot_prices = bars[pivot].close_price + self.means[:, pivot] + self.bands[:, pivot] * self.boll_multi_m + liquidity_adjusts - backwardations_adjusts # the smaller, the more easier to pivot
+
+        bar_prices = np.array([bar.close_price for bar in bars])
+        from_pivot_prices_diff = bar_prices - from_pivot_prices # the larger, the harder to move away from pivot
+        to_pivot_price_diff = bar_prices - to_pivot_prices # the larger, the easier to pivot
+
+        idx_to_move = np.argwhere(to_pivot_price_diff > 0).flatten()
         if self.days_to_expiry[0] < 2:
-            normalized_bid[0] = 100000
-            normalized_ask[0] = 100000
+            argmin = np.argmin(from_pivot_prices_diff[1:]) + 1
+            idx_to_move = np.unique(np.append(idx_to_move, 0))
+        else:
+            argmin = np.argmin(from_pivot_prices_diff)
 
-        to_main = np.argwhere(normalized_bid > 1.0).flatten()
-        from_main_argmin = normalized_ask.argmin()
+
+        if from_pivot_prices_diff[argmin] > 0:
+            argmin = pivot
+        else:
+            idx_to_move = np.unique(np.append(idx_to_move, pivot))
+
         self.debug_file.write(bar_timestamp.isoformat() + "\n")
-        self.debug_file.write(f"backwardations: {str(backwardations)}\n")
+        self.debug_file.write(f"SPOT: {self.latest_spot}  ")
         for t in bars:
             self.debug_file.write(f"{t.vt_symbol}: {t.close_price}, {t.close_price}  ")
         self.debug_file.write('\n')
+        self.debug_file.write(f"holdings: {str(holdings)}\n")
+        self.debug_file.write(f"backwardations: {str(backwardations)}\n")
+        self.debug_file.write(f"unit_backwardations: {str(unit_backwardations)}\n")
         self.debug_file.write(f"days_to_expiry: {str(self.days_to_expiry)}\n")
-        self.debug_file.write(f"multipliers: {str(multipliers)}\n")
-        self.debug_file.write(f"sprd_2_main_bid: {str(sprd_2_main_bid)}\n")
-        self.debug_file.write(f"sprd_2_main_ask: {str(sprd_2_main_ask)}\n")
-        self.debug_file.write(f"mean: {str(self.means[:, 1])}\n")
-        self.debug_file.write(f"std: {str(self.stds[:, 1])}\n")
-        self.debug_file.write(f"band: {str(self.bands[:, 1])}\n")
-        self.debug_file.write(f"normalized_bid: {str(normalized_bid)}\n")
-        self.debug_file.write(f"normalized_ask: {str(normalized_ask)}\n")
-        argmin = from_main_argmin if normalized_ask[from_main_argmin] < -1.0 else 1
-        idx_to_move = to_main if argmin == 1 else np.append(to_main, 1)
+        self.debug_file.write(f"mean: {str(self.means[:, pivot])}\n")
+        self.debug_file.write(f"std: {str(self.stds[:, pivot])}\n")
+        self.debug_file.write(f"band: {str(self.bands[:, pivot])}\n")
+        self.debug_file.write(f"boll_multis: {str(boll_multis)}\n")
+        self.debug_file.write(f"liquidity_adjusts: {str(liquidity_adjusts)}\n")
+        self.debug_file.write(f"backwardations_adjusts: {str(backwardations_adjusts)}\n")
+        self.debug_file.write(f"from_pivot_prices: {str(from_pivot_prices)}\n")
+        self.debug_file.write(f"to_pivot_prices: {str(to_pivot_prices)}\n")
+        self.debug_file.write(f"from_pivot_prices_diff: {str(from_pivot_prices_diff)}\n")
+        self.debug_file.write(f"to_pivot_price_diff: {str(to_pivot_price_diff)}\n")
+        self.debug_file.write(f"argmin: {argmin}\n")
+        self.debug_file.write(f"idx_to_move: {idx_to_move}\n")
+        try:
+            for f, t in list(self.switch_mapping.items()):
+                fi = self.vt_symbols_today.index(f)
+                ti = self.vt_symbols_today.index(t)
+                if ti != argmin or fi not in idx_to_move:
+                    for oid in self.switches[t][4]:
+                        order = self.get_order(oid)
+                        if order and order.is_active():
+                            self.cancel_order(oid)
+                    del self.switch_mapping[f]
+                    del self.switches[t]
+        except:
+            import traceback
+            print(bar_timestamp.isoformat())
+            traceback.print_exc()
+            raise
+
+        if not bool(self.minute_bars) or bool(self.switches):
+            self.put_event()
+            return
+
         for idx in idx_to_move:
-            if holdings[idx] > 0:
+            if holdings[idx] > 0 and idx != argmin:
                 if self.days_to_expiry[idx] < 2:
                     target_price = bars[argmin].close_price + self.price_add
-                elif argmin == 1:
-                    target_price = bars[idx].close_price - self.means[idx, 1] - self.bands[idx, 1] * self.boll_multi_m
+                elif argmin == pivot:
+                    target_price = bars[pivot].close_price - liquidity_adjusts[idx]
                 else:
-                    target_price = bars[1].close_price + self.means[argmin, 1] + self.bands[argmin, 1] * multipliers[
-                        argmin]
-                target_price = np.floor(target_price/0.2) * 0.2
-                self.buy(self.vt_symbols_today[argmin], target_price, holdings[idx])
+                    target_price = from_pivot_prices[idx]
+                target_price = np.floor(target_price/0.2) * 0.2 - 0.2
+                buy_id = self.buy(self.vt_symbols_today[argmin], target_price, holdings[idx])
                 close_price = bars[idx].close_price - self.price_add
                 self.switches.update({
-                    self.vt_symbols_today[argmin]: [self.vt_symbols_today[idx], close_price, holdings[idx], 0]
+                    self.vt_symbols_today[argmin]: [self.vt_symbols_today[idx], close_price, holdings[idx], 0, buy_id]
                 })
                 self.switch_mapping[self.vt_symbols_today[idx]] = self.vt_symbols_today[argmin]
                 self.debug_file.write(
                     f"{self.vt_symbols_today[idx]}@{close_price}->{self.vt_symbols_today[argmin]}@{target_price}\n")
         self.put_event()
-        # days_to_expiry_for_0 = (self.expiries[0] - bar_timestamp).days
-        #
-        #
-        # expiry_penalty_factor = np.exp(0.3 * (5 - min(5, days_to_expiry_for_0 - 2)))
-        # # total = sum(holdings)
-        # # print(f"{bar_timestamp} - holdings: {str(holdings)}, total: {total}")
-        # # if total > self.target_position:
-        # # print(f"{bar_timestamp} - before order holdings: {str(holdings)}, total: {total}")
-        # for idx, vt_symbol in enumerate(self.vt_symbols_today):
-        #     current_pos_this_symbol = self.get_pos(vt_symbol)
-        #     if current_pos_this_symbol > 0:
-        #         tick_sprds = [bars[s].close_price - bars[vt_symbol].close_price for s in self.vt_symbols_today]
-        #         normalized = np.array([(ts-self.means[(s, idx)])/self.bands[s, idx]
-        #                                for s, ts in enumerate(tick_sprds)])
-        #         if days_to_expiry_for_0 < 2:
-        #             argmin = np.argmin(normalized[1:]) + 1
-        #         else:
-        #             normalized[0] /= expiry_penalty_factor
-        #             argmin = np.argmin(normalized)
-        #
-        #         if argmin == idx:
-        #             continue
-        #
-        #         if idx == 0 and days_to_expiry_for_0 < 2:
-        #             target_price = bars[self.vt_symbols_today[argmin]].close_price + self.price_add
-        #             self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
-        #             close_price = bars[vt_symbol].close_price - self.price_add
-        #             self.switches.update({
-        #                 self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
-        #             })
-        #             self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
-        #         elif normalized[argmin] < -self.boll_dev:
-        #             # print(bar_timestamp.isoformat(), normalized, argmin)
-        #             target_price = bars[vt_symbol].close_price - self.means[idx, argmin] - \
-        #                            self.bands[argmin, idx] * self.boll_dev * \
-        #                            (expiry_penalty_factor if argmin == 0 else 1)
-        #
-        #             self.buy(self.vt_symbols_today[argmin], target_price, current_pos_this_symbol)
-        #             close_price = bars[vt_symbol].close_price - self.price_add
-        #             self.switches.update({
-        #                 self.vt_symbols_today[argmin]: [vt_symbol, close_price, current_pos_this_symbol, 0]
-        #             })
-        #             self.switch_mapping[vt_symbol] = self.vt_symbols_today[argmin]
 
     def update_order(self, order: OrderData) -> None:
         super(BackwardationRollingStrategy, self).update_order(order)
@@ -491,8 +458,9 @@ class BackwardationRollingStrategy(StrategyTemplate):
             # print(f"{trade.datetime.isoformat()} - switch from {from_vt_symbol} @{close_price:.2f} to"
             #       f" {trade.vt_symbol} @{trade.price:.2f})")
             self.switches[trade.vt_symbol][2] -= trade.volume
-            self.sell(from_vt_symbol, close_price, trade.volume)
+            sell_id = self.sell(from_vt_symbol, close_price, trade.volume)
             self.switches[trade.vt_symbol][3] += trade.volume
+            self.switches[trade.vt_symbol][4].extend(sell_id)
             self.debug_file.write(
                 f"{from_vt_symbol}->{trade.vt_symbol}@{trade.price}\n")
 
