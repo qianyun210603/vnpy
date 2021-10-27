@@ -30,8 +30,8 @@ if __name__ == '__main__':
     setting = {
         "boll_window": 2400,
         "boll_multi_m": 1,
-        "boll_multi_fm": 1,
-        "boll_multi_q": 3,
+        "boll_multi_fm": 3,
+        "boll_multi_q": 4,
         "target_position": 1,
         "start_contract_no": -1,
     }
