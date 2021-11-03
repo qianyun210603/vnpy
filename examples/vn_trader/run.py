@@ -52,7 +52,7 @@ from vnpy_ctabacktester import CtaBacktesterApp
 from vnpy_spreadtrading import SpreadTradingApp
 from vnpy.app.algo_trading import AlgoTradingApp
 # from vnpy.app.option_master import OptionMasterApp
-# from vnpy.app.portfolio_strategy import PortfolioStrategyApp
+from vnpy.app.portfolio_strategy import PortfolioStrategyApp
 # from vnpy.app.script_trader import ScriptTraderApp
 # from vnpy.app.market_radar import MarketRadarApp
 # from vnpy_chartwizard import ChartWizardApp
@@ -122,7 +122,7 @@ def main():
     main_engine.add_app(SpreadTradingApp)
     main_engine.add_app(AlgoTradingApp)
     # main_engine.add_app(OptionMasterApp)
-    # main_engine.add_app(PortfolioStrategyApp)
+    main_engine.add_app(PortfolioStrategyApp)
     # main_engine.add_app(ScriptTraderApp)
     # main_engine.add_app(MarketRadarApp)
     # main_engine.add_app(ChartWizardApp)

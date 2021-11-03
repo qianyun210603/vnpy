@@ -1,7 +1,9 @@
 from datetime import datetime
 from vnpy.app.portfolio_strategy import BacktestingEngine
 from vnpy.trader.constant import Interval
-from vnpy.app.portfolio_strategy.strategies.rolling_contract_strategy import BackwardationRollingStrategy
+from vnpy.app.portfolio_strategy.strategies.rolling_contract_strategy1 import BackwardationRollingStrategy
+
+# IF2111.CFFEX,IF2112.CFFEX,IF2203.CFFEX,IF2206.CFFEX
 
 if __name__ == '__main__':
     engine = BacktestingEngine()
@@ -16,9 +18,9 @@ if __name__ == '__main__':
 
     engine.set_parameters(
         vt_symbols=vt_symbols,
-        interval=Interval.MINUTE,
-        intervals={'000300.SSE': Interval.MINUTE},
-        start=datetime(2020, 12, 18),
+        interval=Interval.TICK,
+        intervals={'000300.SSE': Interval.TICK},
+        start=datetime(2021, 12, 17),
         end=datetime(2021, 9, 30),
         rates={x: 0.23 / 10000 for x in vt_symbols},
         slippages={x: 0 for x in vt_symbols},
@@ -28,12 +30,13 @@ if __name__ == '__main__':
     )
 
     setting = {
-        "boll_window": 2400,
+        "boll_window": 1200,
         "boll_multi_m": 1,
         "boll_multi_fm": 3,
-        "boll_multi_q": 4,
+        "boll_multi_q": 3,
         "target_position": 1,
-        "start_contract_no": -1,
+        "start_contract_no": 1,
+        "abandon_date": 11,
     }
     engine.add_strategy(BackwardationRollingStrategy, setting)
     engine.load_data()

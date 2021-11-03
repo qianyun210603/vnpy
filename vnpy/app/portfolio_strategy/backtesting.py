@@ -557,74 +557,76 @@ class BacktestingEngine:
         """
         while bool(self.limit_order_process_queue):
             order: OrderData = self.active_limit_orders.get(self.limit_order_process_queue.popleft(), None)
-            if order is None or not order.vt_symbol in self.history_data[dt]:
+            if order is None:
                 continue
-            mk_data = self.history_data[dt][order.vt_symbol]
-
-            if self.intervals.get(order.vt_symbol, self.interval) != Interval.TICK:
-                long_cross_price = mk_data.low_price
-                short_cross_price = mk_data.high_price
-                long_best_price = mk_data.open_price
-                short_best_price = mk_data.open_price
-            else:
-                last_price = (mk_data.bid_price_1 + mk_data.ask_price_1) / 2 if np.isnan(mk_data.last_price) \
-                    else mk_data.last_price
-                long_cross_price = mk_data.ask_price_1
-                short_cross_price = mk_data.bid_price_1
-                long_best_price = max(mk_data.ask_price_1, last_price)
-                short_best_price = min(mk_data.bid_price_1, last_price)
-
             # Push order update with status "not traded" (pending).
             if order.status == Status.SUBMITTING:
                 order.status = Status.NOTTRADED
                 order.datetime = dt
                 self.strategy.update_order(order)
 
-            # Check whether limit orders can be filled.
-            long_cross = (
-                    order.direction == Direction.LONG
-                    and order.price >= long_cross_price > 0
-            )
+            if order.vt_symbol in self.history_data[dt]:
+                mk_data = self.history_data[dt][order.vt_symbol]
 
-            short_cross = (
-                order.direction == Direction.SHORT
-                and order.price <= short_cross_price
-                and short_cross_price > 0
-            )
+                if self.intervals.get(order.vt_symbol, self.interval) != Interval.TICK:
+                    long_cross_price = mk_data.low_price
+                    short_cross_price = mk_data.high_price
+                    long_best_price = mk_data.open_price
+                    short_best_price = mk_data.open_price
+                else:
+                    last_price = (mk_data.bid_price_1 + mk_data.ask_price_1) / 2 if np.isnan(mk_data.last_price) \
+                        else mk_data.last_price
+                    long_cross_price = mk_data.ask_price_1
+                    short_cross_price = mk_data.bid_price_1
+                    long_best_price = max(mk_data.ask_price_1, last_price)
+                    short_best_price = min(mk_data.bid_price_1, last_price)
 
-            if not long_cross and not short_cross:
-                continue
+                # Check whether limit orders can be filled.
+                long_cross = (
+                        order.direction == Direction.LONG
+                        and order.price >= long_cross_price > 0
+                )
 
-            # Push order update with status "all traded" (filled).
-            order.traded = order.volume
-            order.status = Status.ALLTRADED
-            self.strategy.update_order(order)
+                short_cross = (
+                    order.direction == Direction.SHORT
+                    and order.price <= short_cross_price
+                    and short_cross_price > 0
+                )
 
-            self.active_limit_orders.pop(order.vt_orderid)
+                if not long_cross and not short_cross:
+                    continue
 
-            # Push trade update
-            self.trade_count += 1
+                # Push order update with status "all traded" (filled).
+                order.traded = order.volume
+                order.status = Status.ALLTRADED
+                order.datetime = dt
+                self.strategy.update_order(order)
 
-            if long_cross:
-                trade_price = min(order.price, long_best_price)
-            else:
-                trade_price = max(order.price, short_best_price)
+                self.active_limit_orders.pop(order.vt_orderid)
 
-            trade = TradeData(
-                symbol=order.symbol,
-                exchange=order.exchange,
-                orderid=order.orderid,
-                tradeid=str(self.trade_count),
-                direction=order.direction,
-                offset=order.offset,
-                price=trade_price,
-                volume=order.volume,
-                datetime=self.datetime,
-                gateway_name=self.gateway_name,
-            )
+                # Push trade update
+                self.trade_count += 1
 
-            self.strategy.update_trade(trade)
-            self.trades[trade.vt_tradeid] = trade
+                if long_cross:
+                    trade_price = min(order.price, long_best_price)
+                else:
+                    trade_price = max(order.price, short_best_price)
+
+                trade = TradeData(
+                    symbol=order.symbol,
+                    exchange=order.exchange,
+                    orderid=order.orderid,
+                    tradeid=str(self.trade_count),
+                    direction=order.direction,
+                    offset=order.offset,
+                    price=trade_price,
+                    volume=order.volume,
+                    datetime=self.datetime,
+                    gateway_name=self.gateway_name,
+                )
+
+                self.strategy.update_trade(trade)
+                self.trades[trade.vt_tradeid] = trade
 
     def load_bars(
         self,
@@ -669,6 +671,7 @@ class BacktestingEngine:
         if self.intervals.get(order.vt_symbol, self.interval) != Interval.TICK:
             self.limit_order_process_queue.append(order.vt_orderid)
         self.limit_orders[order.vt_orderid] = order
+        self.strategy.update_order(order)
 
         return [order.vt_orderid]
 
