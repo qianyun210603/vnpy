@@ -20,8 +20,8 @@ if __name__ == '__main__':
         vt_symbols=vt_symbols,
         interval=Interval.TICK,
         intervals={'000300.SSE': Interval.TICK},
-        start=datetime(2021, 12, 17),
-        end=datetime(2021, 9, 30),
+        start=datetime(2020, 12, 17),
+        end=datetime(2021, 1, 30),
         rates={x: 0.23 / 10000 for x in vt_symbols},
         slippages={x: 0 for x in vt_symbols},
         sizes={x: 300 for x in vt_symbols},
@@ -33,9 +33,8 @@ if __name__ == '__main__':
         "boll_window": 1200,
         "boll_multi_m": 1,
         "boll_multi_fm": 3,
-        "boll_multi_q": 3,
+        "boll_multi_q": 4,
         "target_position": 1,
-        "start_contract_no": 1,
         "abandon_date": 11,
     }
     engine.add_strategy(BackwardationRollingStrategy, setting)

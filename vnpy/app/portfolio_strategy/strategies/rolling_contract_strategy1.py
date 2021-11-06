@@ -84,7 +84,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         # Dict[Tuple[int, int], Dict] = {}
 
         self.parameter_date: Optional[datetime] = None
-        self.liquidity_adjust: np.ndarray = np.array([2, 2, 4, 6.0])
+        self.liquidity_adjust: np.ndarray = np.array([2.0, 2.0, 2.0, 2.0])
 
         self.symbol_mapping: Dict[str, str] = {}
         self.contract_info = None
@@ -261,10 +261,10 @@ class BackwardationRollingStrategy(StrategyTemplate):
                     for oid in self.switches[t][3]:
                         order = self.get_order(oid)
                         if order and order.is_active():
-                            # print("canceled", oid, order.vt_symbol)
+                            print("canceled", oid, order.vt_symbol)
                             self.cancel_order(oid)
-                            self.switch_mapping[t][3].remove(oid)
-                    if self.switches[t][1] == self.switches[t][2]:
+                    self.switches[t][3] = [oid for oid in self.switches[t][3] if oid in self.orders and self.orders[oid].is_active()]
+                    if self.switches[t][1] >= self.switches[t][2]:
                         del self.switch_mapping[f]
                         del self.switches[t]
         except:
@@ -282,7 +282,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
                 if self.days_to_expiry[idx] < 2:
                     target_price = ticks[argmin].ask_price_1 + self.price_add
                 elif argmin == pivot:
-                    target_price = ticks[pivot].ask_price_1 + self.liquidity_adjust[pivot]
+                    target_price = ticks[pivot].ask_price_1
                 else:
                     target_price = from_pivot_prices[idx]
                 target_price = np.floor(target_price/0.2) * 0.2
@@ -371,6 +371,7 @@ class BackwardationRollingStrategy(StrategyTemplate):
         #     print(order)
         if not order.is_active() and order.vt_symbol in self.switches:
             self.switches[order.vt_symbol][3].remove(order.vt_orderid)
+
 
     def update_trade(self, trade: TradeData) -> None:
         super(BackwardationRollingStrategy, self).update_trade(trade)

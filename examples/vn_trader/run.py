@@ -12,7 +12,7 @@ from vnpy_ctp import CtpGateway
 # from vnpy_sopt import SoptGateway
 # from vnpy.gateway.sopttest import SopttestGateway
 # from vnpy.gateway.sec import SecGateway
-# from vnpy_uft import UftGateway
+from vnpy_uft import UftGateway
 # from vnpy_esunny import EsunnyGateway
 # from vnpy.gateway.hsoption import HsoptionGateway
 # from vnpy_xtp import XtpGateway
@@ -82,7 +82,7 @@ def main():
     # main_engine.add_gateway(SoptGateway)
     # main_engine.add_gateway(SopttestGateway)
     # main_engine.add_gateway(SecGateway)    
-    # main_engine.add_gateway(UftGateway)
+    main_engine.add_gateway(UftGateway)
     # main_engine.add_gateway(EsunnyGateway)
     # main_engine.add_gateway(HsoptionGateway)
     # main_engine.add_gateway(XtpGateway)
