@@ -8,16 +8,15 @@ from datetime import datetime, time
 from dateutil import tz
 
 import numpy as np
-import threading
+# import threading
 from vnpy.app.portfolio_strategy import StrategyTemplate, StrategyEngine
 from vnpy.trader.utility import BarGenerator
 from vnpy.trader.object import TickData, BarData, TradeData, OrderData
-# from vnpy.trader.constant import Status
-import requests
-import re
-import pysnowball
-import pytz
-import time
+from vnpy.trader.constant import Direction
+# import requests
+# import re
+# import pysnowball
+# import pytz
 
 
 class BackwardationRollingStrategyM(StrategyTemplate):
@@ -112,35 +111,35 @@ class BackwardationRollingStrategyM(StrategyTemplate):
             self.targets[vt_symbol] = 0
             self.bgs[vt_symbol] = BarGenerator(self.on_bar)
 
-        self.spot_timer = None
-        if self.backtest:
-            self.spot_timer = threading.Thread(target=self._get_spot_price, daemon=True)
-            self.spot_timer.start()
+        # self.spot_timer = None
+        # if not self.backtest:
+        #     self.spot_timer = threading.Thread(target=self._get_spot_price, daemon=True)
+        #     self.spot_timer.start()
 
-    def _get_spot_price(self):
-        while True:
-            now_time = datetime.now().time()
-            if (time(9, 30) <= now_time <= time(11, 30) or time(13, 0) <= now_time <= time(15, 0)) and now_time.second > 55:
-                try:
-                    res = pysnowball.quotec('SH000300')
-                    self.latest_spot = res['current']
-                    self.latest_spot_time = datetime.fromtimestamp(res['timestamp']/1000, tz=pytz.timezone('Asia/Shanghai'))
-                    self.write_log("获取指数价格%f" % self.latest_spot)
-                except:
-                    self.write_log("无法从雪球接口获取，改为新浪")
-                    try:
-                        res = requests.get('http://hq.sinajs.cn/list=sh000300')
-                        obj = re.match(
-                            r'var hq_str_sh000300="沪深300,([0-9.]+),.+,(\d{4}-\d{2}-\d{2},\d{2}:\d{2}:\d{2},\d+),";\n',  res.text
-                        )
-                        price_str, time_str = obj.groups()
-                        self.latest_spot = float(price_str)
-                        self.latest_spot_time = datetime.strptime(time_str, "%Y-%m-%d,%H:%M:%S,%f")
-                        self.write_log("获取指数价格%f" % self.latest_spot)
-                    except Exception:
-                        pass
-                finally:
-                    time.sleep(0.5)
+    # def _get_spot_price(self):
+    #     while True:
+    #         now_time = datetime.now().time()
+    #         if (time(9, 30) <= now_time <= time(11, 30) or time(13, 0) <= now_time <= time(15, 0)) and now_time.second > 55:
+    #             try:
+    #                 res = pysnowball.quotec('SH000300')
+    #                 self.latest_spot = res['current']
+    #                 self.latest_spot_time = datetime.fromtimestamp(res['timestamp']/1000, tz=pytz.timezone('Asia/Shanghai'))
+    #                 self.write_log("获取指数价格%f" % self.latest_spot)
+    #             except:
+    #                 self.write_log("无法从雪球接口获取，改为新浪")
+    #                 try:
+    #                     res = requests.get('http://hq.sinajs.cn/list=sh000300')
+    #                     obj = re.match(
+    #                         r'var hq_str_sh000300="沪深300,([0-9.]+),.+,(\d{4}-\d{2}-\d{2},\d{2}:\d{2}:\d{2},\d+),";\n',  res.text
+    #                     )
+    #                     price_str, time_str = obj.groups()
+    #                     self.latest_spot = float(price_str)
+    #                     self.latest_spot_time = datetime.strptime(time_str, "%Y-%m-%d,%H:%M:%S,%f")
+    #                     self.write_log("获取指数价格%f" % self.latest_spot)
+    #                 except Exception:
+    #                     pass
+    #             finally:
+    #                 time.sleep(0.5)
 
     def _load_auxiliary_data(self):
         cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.__class__.__name__)
@@ -188,8 +187,8 @@ class BackwardationRollingStrategyM(StrategyTemplate):
                 (self.contract_info.end_date + pd.Timedelta(hours=23) >= today)
             ].sort_values(by='end_date').index.to_list()
         self.vt_symbols_today = [x + '.CFFEX' for x in raw]
-        self.expiries = [x.to_pydatetime() for x in self.contract_info.loc[raw, 'end_date']]
-        self.days_to_expiry = np.array([max((e - today).days, 1) for e in self.expiries])
+        self.expiries = [x.to_pydatetime().replace(hour=16) for x in self.contract_info.loc[raw, 'end_date']]
+        self.days_to_expiry = np.array([(e - today).days for e in self.expiries])
 
 
     def on_stop(self):
@@ -218,16 +217,93 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         # #     print(tick.datetime)
         bg: BarGenerator = self.bgs[tick.vt_symbol]
         bg.update_tick(tick)
-
         self.last_tick_time = tick.datetime
-        if self.backtest and tick.vt_symbol == self.vt_symbol_spot:
-            self.latest_spot = tick.last_price
-            self.latest_spot_time = tick.datetime
 
-        # trading = self.trading and time(9, 31) < self.last_tick_time.time() < time(14, 55)
+        if not self.trading:
+            return
 
-        #if not trading or not all(vt_sym in self.ticks for vt_sym in self.vt_symbols_today) or bool(self.switches):
-            # return
+        if tick.datetime.time() < time(9, 33) or tick.datetime.time() > time(14, 57):
+            return
+
+        ticks: List[TickData] = [self.ticks.get(vt_s, None) for vt_s in self.vt_symbols_today[:2]]
+        if any(t is None for t in ticks):
+            return
+
+        sources = set()
+        target = 0
+
+        holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today[:2]]
+
+        if all(h==0 for h in holdings) and not bool(self.get_all_active_orderids()):
+            self.buy(self.vt_symbols_today[0], ticks[0].ask_price_1+1, 1)
+            self.sell(self.vt_symbol_spot, self.ticks[self.vt_symbol_spot].bid_price_1-1, 1)
+            return
+        i, j = 0, 1
+        if holdings[i] > 0 and (self.days_to_expiry[i] == 0 or ticks[i].bid_price_1 - ticks[j].ask_price_1 > self.means[i, j] + self.bands[i, j]):
+            # print(self.days_to_expiry)
+            sources.add(i)
+            target = j
+        elif holdings[j] > 0 and (self.days_to_expiry[i] > 0 and ticks[i].bid_price_1 - ticks[j].ask_price_1 < self.means[i, j] - self.bands[i, j]):
+            # print(self.days_to_expiry)
+            sources.add(j)
+            target = i
+
+        try:
+            for f, t in list(self.switch_mapping.items()):
+                fi = self.vt_symbols_today.index(f)
+                ti = self.vt_symbols_today.index(t)
+                if ti != target or fi not in sources:
+                    for oid in self.switches[t][3]:
+                        order = self.get_order(oid)
+                        if order and order.is_active():
+                            print("canceled", oid, order.vt_symbol, order.price, order.direction.name,
+                                  self.ticks[order.vt_symbol].bid_price_1 if order.direction == Direction.SHORT else
+                                  self.ticks[order.vt_symbol].ask_price_1, order.datetime.isoformat(), self.ticks[order.vt_symbol].datetime.isoformat())
+                            self.cancel_order(oid)
+                    self.switches[t][3] = [oid for oid in self.switches[t][3] if oid in self.orders and self.orders[oid].is_active()]
+                    if self.switches[t][1] >= self.switches[t][2]:
+                        del self.switch_mapping[f]
+                        del self.switches[t]
+        except:
+            import traceback
+            print(tick.datetime.isoformat())
+            traceback.print_exc()
+            raise
+
+        if not bool(self.ticks) or bool(self.switches):
+            return
+        # print(holdings)
+        for idx in sources:
+            if holdings[idx] > 0 and idx != target:
+                if self.days_to_expiry[idx] == 0:
+                    target_price = ticks[target].ask_price_1 + self.price_add
+                else:
+                    target_price = max(ticks[target].ask_price_1 + 1, ticks[target].last_price-0.2)
+                target_price = np.floor(target_price/0.2) * 0.2
+                if self.vt_symbols_today[target] in self.switches:
+                    active = 0
+                    for oid in self.switches[self.vt_symbols_today[target]][3]:
+                        o = self.get_order(oid)
+                        if o and o.price <= target_price + 1e-4:
+                            active += o.volume - o.traded
+                        else:
+                            print("replaced", oid, o.vt_symbol)
+                            self.cancel_order(oid)
+                            self.switches[self.vt_symbols_today[target]][3].remove(oid)
+                    order_amount = holdings[idx] - active
+                    # print(holdings[idx], active)
+                    if order_amount > 0 and ticks[target].ask_price_1 <= target_price:
+                        buy_id = self.buy(self.vt_symbols_today[target], target_price, order_amount)
+                        self.switches[self.vt_symbols_today[target]][3].extend(buy_id)
+                elif ticks[target].ask_price_1 <= target_price:
+                    buy_id = self.buy(self.vt_symbols_today[target], target_price, holdings[idx])
+                    self.switches.update({
+                        self.vt_symbols_today[target]: [self.vt_symbols_today[idx], holdings[idx], 0, buy_id]
+                    })
+                    self.switch_mapping[self.vt_symbols_today[idx]] = self.vt_symbols_today[target]
+                self.debug_file.write(
+                    f"{self.vt_symbols_today[idx]}->{self.vt_symbols_today[target]}@{target_price}\n")
+
 
     def on_bar(self, bar: BarData) -> None:
         self.minute_bars[bar.vt_symbol] = bar
@@ -239,13 +315,13 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         # print(self.last_bar_time.isoformat(), bar.vt_symbol, bar.datetime.isoformat(),
         # self.minute_bars[self.vt_symbol_spot].datetime)
         if all(s in self.minute_bars and self.last_bar_time == self.minute_bars[s].datetime
-               for s in self.vt_symbols_today) and self.minute_bars[self.vt_symbol_spot].datetime == self.last_bar_time:
+               for s in self.vt_symbols_today) and self.vt_symbol_spot in self.minute_bars and self.minute_bars[self.vt_symbol_spot].datetime == self.last_bar_time:
             self.on_bars()
 
     def on_bars(self):
         """"""
         bars: List[BarData] = [self.minute_bars[vt_s] for vt_s in self.vt_symbols_today]
-        bar_timestamp = bars[0].datetime
+        # bar_timestamp = bars[0].datetime
         # print(bar_timestamp.isoformat())
         for i in range(self.contracts_same_day):
             for j in range(self.contracts_same_day):
@@ -254,136 +330,8 @@ class BackwardationRollingStrategyM(StrategyTemplate):
                 self.spread_datas[i, j, -1] = current_spread
                 self.means[i, j] = self.spread_datas[i, j].mean()
                 self.stds[i, j] = self.spread_datas[i, j].std()
-                self.bands[i, j] = np.clip(self.stds[i, j], self.band_floor, self.band_ceil)
-        if not self.trading:
-            return
+                self.bands[i, j] = np.clip(self.stds[i, j]*self.boll_multi_m, self.band_floor, self.band_ceil)
 
-        holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today]
-        backwardations = np.array([t.close_price - self.latest_spot for t in bars])
-        unit_backwardations = backwardations / self.days_to_expiry
-        unit_backwardations[0] /= np.exp(0.3 * (5 - min(5, self.days_to_expiry[0] - 2)))
-        if self.days_to_expiry[0] < 2:
-            pivot = np.argmin(unit_backwardations[1:]) + 1
-        else:
-            pivot = np.argmin(unit_backwardations)
-
-        if sum(holdings) < self.target_position:
-            print(bar_timestamp.isoformat(), " - buy future")
-            idx = pivot if self.start_contract_no < 0 else self.start_contract_no
-            self.buy(
-                self.vt_symbols_today[idx], bars[idx].close_price + self.price_add,
-                volume=self.target_position-sum(holdings)
-            )
-
-        short_spot_pos = self.get_pos(self.vt_symbol_spot)
-        if short_spot_pos != -self.target_position:
-            print(bar_timestamp.isoformat(), " - short spot")
-            self.short(self.vt_symbol_spot, self.minute_bars[self.vt_symbol_spot].close_price - self.price_add,
-                       abs(-self.target_position - short_spot_pos))
-
-        backwardations_adjusts = (unit_backwardations - unit_backwardations[pivot]) * np.minimum(self.days_to_expiry[pivot], self.days_to_expiry) # the larger, should be more easier to pivot
-        liquidity_adjusts = self.liquidity_adjust + self.liquidity_adjust[pivot]
-        boll_multis = np.select([self.indexes < pivot, self.indexes > pivot], [self.boll_multi_fm, self.boll_multi_q], self.boll_multi_m)
-
-        from_pivot_prices = bars[pivot].close_price + self.means[:, pivot] - self.bands[:, pivot] * boll_multis - liquidity_adjusts - backwardations_adjusts # the smaller, the more harder to move away from pivot
-
-        to_pivot_prices = bars[pivot].close_price + self.means[:, pivot] + self.bands[:, pivot] * self.boll_multi_m + liquidity_adjusts - backwardations_adjusts # the smaller, the more easier to pivot
-
-        bar_prices = np.array([bar.close_price for bar in bars])
-        from_pivot_prices_diff = bar_prices - from_pivot_prices # the larger, the harder to move away from pivot
-        to_pivot_price_diff = bar_prices - to_pivot_prices # the larger, the easier to pivot
-
-        idx_to_move = np.argwhere(to_pivot_price_diff > 0).flatten()
-        if self.days_to_expiry[0] < 2:
-            argmin = np.argmin(from_pivot_prices_diff[1:]) + 1
-            idx_to_move = np.unique(np.append(idx_to_move, 0))
-        else:
-            argmin = np.argmin(from_pivot_prices_diff)
-
-
-        if from_pivot_prices_diff[argmin] > 0:
-            argmin = pivot
-        else:
-            idx_to_move = np.unique(np.append(idx_to_move, pivot))
-
-        self.debug_file.write(bar_timestamp.isoformat() + "\n")
-        self.debug_file.write(f"SPOT: {self.latest_spot}  ")
-        for t in bars:
-            self.debug_file.write(f"{t.vt_symbol}: {t.close_price}, {t.close_price}  ")
-        self.debug_file.write('\n')
-        self.debug_file.write(f"holdings: {str(holdings)}\n")
-        self.debug_file.write(f"backwardations: {str(backwardations)}\n")
-        self.debug_file.write(f"unit_backwardations: {str(unit_backwardations)}\n")
-        self.debug_file.write(f"days_to_expiry: {str(self.days_to_expiry)}\n")
-        self.debug_file.write(f"mean: {str(self.means[:, pivot])}\n")
-        self.debug_file.write(f"std: {str(self.stds[:, pivot])}\n")
-        self.debug_file.write(f"band: {str(self.bands[:, pivot])}\n")
-        self.debug_file.write(f"boll_multis: {str(boll_multis)}\n")
-        self.debug_file.write(f"liquidity_adjusts: {str(liquidity_adjusts)}\n")
-        self.debug_file.write(f"backwardations_adjusts: {str(backwardations_adjusts)}\n")
-        self.debug_file.write(f"from_pivot_prices: {str(from_pivot_prices)}\n")
-        self.debug_file.write(f"to_pivot_prices: {str(to_pivot_prices)}\n")
-        self.debug_file.write(f"from_pivot_prices_diff: {str(from_pivot_prices_diff)}\n")
-        self.debug_file.write(f"to_pivot_price_diff: {str(to_pivot_price_diff)}\n")
-        self.debug_file.write(f"argmin: {argmin}\n")
-        self.debug_file.write(f"idx_to_move: {idx_to_move}\n")
-        # if bool(self.switches) or bool(self.switch_mapping):
-        #     print(argmin, idx_to_move)
-        #     print("before cancel", self.switches, self.switch_mapping)
-        try:
-            for f, t in list(self.switch_mapping.items()):
-                fi = self.vt_symbols_today.index(f)
-                ti = self.vt_symbols_today.index(t)
-                if ti != argmin or fi not in idx_to_move:
-                    for oid in self.switches[t][3]:
-                        order = self.get_order(oid)
-                        if order and order.is_active():
-                            print("canceled", oid, order.vt_symbol)
-                            self.cancel_order(oid)
-                    self.switches[t][3] = [oid for oid in self.switches[t][3] if oid in self.orders and self.orders[oid].is_active()]
-                    if self.switches[t][1] >= self.switches[t][2]:
-                        del self.switch_mapping[f]
-                        del self.switches[t]
-        except:
-            import traceback
-            traceback.print_exc()
-            raise
-        # if bool(self.switches) or bool(self.switch_mapping):
-        #     print("after cancel", self.switches, self.switch_mapping)
-        if not bool(self.minute_bars) or bool(self.switches):
-            self.put_event()
-            return
-        # print(holdings)
-        for idx in idx_to_move:
-            if holdings[idx] > 0 and idx != argmin:
-                if self.days_to_expiry[idx] < 2:
-                    target_price = bars[argmin].close_price + self.price_add
-                elif argmin == pivot:
-                    target_price = bars[pivot].close_price
-                else:
-                    target_price = from_pivot_prices[idx]
-                target_price = np.floor(target_price/0.2) * 0.2 - 0.2
-                if self.vt_symbols_today[argmin] in self.switches:
-                    active = 0
-                    for oid in self.switches[self.vt_symbols_today[argmin]][3]:
-                        o = self.get_order(oid)
-                        if o and o.price <= target_price + 1e-4:
-                            active += o.volume - o.traded
-                        else:
-                            self.cancel_order(oid)
-                            self.switches[self.vt_symbols_today[argmin]][3].remove(oid)
-                    order_amount = holdings[idx] - active
-                    if order_amount > 0:
-                        buy_id = self.buy(self.vt_symbols_today[argmin], target_price, order_amount)
-                        self.switches[self.vt_symbols_today[argmin]][3].extend(buy_id)
-                else:
-                    buy_id = self.buy(self.vt_symbols_today[argmin], target_price, holdings[idx])
-                    self.switches.update({
-                        self.vt_symbols_today[argmin]: [self.vt_symbols_today[idx], holdings[idx], 0, buy_id]
-                    })
-                    self.switch_mapping[self.vt_symbols_today[idx]] = self.vt_symbols_today[argmin]
-                self.debug_file.write(
-                    f"{self.vt_symbols_today[idx]}->{self.vt_symbols_today[argmin]}@{target_price}\n")
         # if bool(self.switches) or bool(self.switch_mapping):
         #     print("after switch", self.switches, self.switch_mapping)
         self.put_event()
