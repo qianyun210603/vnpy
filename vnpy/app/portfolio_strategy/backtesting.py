@@ -532,8 +532,8 @@ class BacktestingEngine:
 
     def new_data(self, dt: datetime) -> None:
         """"""
-        if self.datetime is None or self.datetime.day != dt.day:
-            self.strategy.on_day_open(dt)
+        # if self.datetime is None or self.datetime.day != dt.day:
+        #     self.strategy.on_day_open(dt)
         self.datetime = dt
 
         for vt_symbol in self.history_data[dt]:

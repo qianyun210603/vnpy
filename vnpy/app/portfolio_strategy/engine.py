@@ -266,26 +266,26 @@ class StrategyEngine(BaseEngine):
             for vt_symbol in vt_symbols:
                 bar = history_data.get((dt, vt_symbol), None)
 
-                # If bar data of vt_symbol at dt exists
-                if bar:
-                    bars[vt_symbol] = bar
-                # Otherwise, use previous data to backfill
-                elif vt_symbol in bars:
-                    old_bar = bars[vt_symbol]
+                # # If bar data of vt_symbol at dt exists
+                # if bar:
+                #     bars[vt_symbol] = bar
+                # # Otherwise, use previous data to backfill
+                # elif vt_symbol in bars:
+                #     old_bar = bars[vt_symbol]
+                #
+                #     bar = BarData(
+                #         symbol=old_bar.symbol,
+                #         exchange=old_bar.exchange,
+                #         datetime=dt,
+                #         open_price=old_bar.close_price,
+                #         high_price=old_bar.close_price,
+                #         low_price=old_bar.close_price,
+                #         close_price=old_bar.close_price,
+                #         gateway_name=old_bar.gateway_name
+                #     )
+                #     bars[vt_symbol] = bar
 
-                    bar = BarData(
-                        symbol=old_bar.symbol,
-                        exchange=old_bar.exchange,
-                        datetime=dt,
-                        open_price=old_bar.close_price,
-                        high_price=old_bar.close_price,
-                        low_price=old_bar.close_price,
-                        close_price=old_bar.close_price,
-                        gateway_name=old_bar.gateway_name
-                    )
-                    bars[vt_symbol] = bar
-
-            self.call_strategy_func(strategy, strategy.on_bars, bars)
+                self.call_strategy_func(strategy, strategy.on_bar, bar)
 
     def load_bar(self, vt_symbol: str, days: int, interval: Interval) -> List[BarData]:
         """"""

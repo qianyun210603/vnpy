@@ -27,7 +27,7 @@ if __name__ == "__main__":
     db_mgr = get_database()
     interval = Interval.MINUTE
     assert interval in (Interval.MINUTE, Interval.DAILY), "only 1min or 1 day bar"
-    myidx = list(all_stocks.trading_code).index('002123') + 1
+    myidx = list(all_stocks.trading_code).index('002179') + 1
     idx = myidx
     for _, row in all_stocks.iloc[myidx:, :].iterrows():
         try:

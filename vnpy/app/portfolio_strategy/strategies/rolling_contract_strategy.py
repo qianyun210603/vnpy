@@ -17,21 +17,21 @@ from vnpy.trader.constant import Direction
 # import re
 # import pysnowball
 # import pytz
-
+# IF2112.CFFEX,IF2201.CFFEX,IF2203.CFFEX,IF2206.CFFEX
 
 class BackwardationRollingStrategyM(StrategyTemplate):
     """"""
 
     author = "Booksword"
     price_add = 15
-    band_floor = 3
+    band_floor = 5
     band_ceil = 100
-    boll_window = 1200
-    boll_multi_m = 1
+    boll_window = 240
+    boll_multi_m = 3
     boll_multi_fm = 100
     boll_multi_q = 100
     abandon_date = 0 # for backtesting only
-    backtest = True
+    backtest = False
 
     target_position = 0
     start_contract_no = -1
@@ -70,7 +70,7 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         super().__init__(strategy_engine, strategy_name, vt_symbols, setting)
         self.bgs: Dict[str, BarGenerator] = {}
         self.targets: Dict[str, int] = {}
-        self.last_tick_time: Optional[datetime] = None
+        self.last_tick_time: Optional[datetime] = datetime(1970, 1, 1, tzinfo=tz.gettz('Asia/Shanghai'))
         self.last_bar_time: Optional[datetime] = datetime(1970, 1, 1, tzinfo=tz.gettz('Asia/Shanghai'))
         self.minute_bars: Dict[str, BarData] = {}
         self.underlying_symbol = vt_symbols[-1][:2]
@@ -164,7 +164,7 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         my_contracts = contract_list[contract_list.name.str.startswith(self.underlying_symbol)].copy()
         my_contracts.start_date = my_contracts.start_date.dt.tz_localize('Asia/Shanghai')
         my_contracts.end_date = my_contracts.end_date.dt.tz_localize('Asia/Shanghai')
-        self.contract_info = my_contracts.set_index('name').drop(['IF8888', 'IF9999'])
+        self.contract_info = my_contracts.set_index('name').drop(['IF8888', 'IF9999'], errors='ignore')
         self.debug_file = open(os.path.join(cache_path, "debug.txt"), "w")
 
     def on_init(self):
@@ -181,7 +181,7 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         self.write_log("策略启动")
 
     def on_day_open(self, today) -> None:
-
+        today = pd.Timestamp(today, tz='Asia/Shanghai')
         raw = self.contract_info[
                 (self.contract_info.start_date <= today) &
                 (self.contract_info.end_date + pd.Timedelta(hours=23) >= today)
@@ -203,6 +203,8 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         """
         Callback of new tick data update.
         """
+        if tick.datetime.date() > max(self.last_bar_time, self.last_tick_time).date():
+            self.on_day_open(tick.datetime.date())
         self.ticks[tick.vt_symbol] = tick
         if (
             self.last_tick_time
@@ -211,7 +213,11 @@ class BackwardationRollingStrategyM(StrategyTemplate):
 
             bg = self.bgs[tick.vt_symbol]
             # print(tick.vt_symbol, tick.datetime)
-            self.on_bar(bg.generate())
+            bar: BarData = bg.generate()
+            if bar:
+                self.on_bar(bar)
+            else:
+                self.write_log("tick: %s" % str(tick))
         # from datetime import time
         # # if tick.datetime.time() > time(14, 59):
         # #     print(tick.datetime)
@@ -236,7 +242,8 @@ class BackwardationRollingStrategyM(StrategyTemplate):
 
         if all(h==0 for h in holdings) and not bool(self.get_all_active_orderids()):
             self.buy(self.vt_symbols_today[0], ticks[0].ask_price_1+1, 1)
-            self.sell(self.vt_symbol_spot, self.ticks[self.vt_symbol_spot].bid_price_1-1, 1)
+            if self.backtest:
+                self.sell(self.vt_symbol_spot, self.ticks[self.vt_symbol_spot].bid_price_1-1, 1)
             return
         i, j = 0, 1
         if holdings[i] > 0 and (self.days_to_expiry[i] == 0 or ticks[i].bid_price_1 - ticks[j].ask_price_1 > self.means[i, j] + self.bands[i, j]):
@@ -306,8 +313,10 @@ class BackwardationRollingStrategyM(StrategyTemplate):
 
 
     def on_bar(self, bar: BarData) -> None:
+        if bar.datetime.date() > max(self.last_bar_time, self.last_tick_time).date():
+            self.on_day_open(bar.datetime.date())
         self.minute_bars[bar.vt_symbol] = bar
-        if bar.vt_symbol == self.vt_symbol_spot:
+        if self.backtest and bar.vt_symbol == self.vt_symbol_spot:
             self.latest_spot = bar.close_price
         # print(bar.datetime.isoformat(), bar.vt_symbol, bar.open_price, bar.high_price, bar.low_price, bar.close_price)
         if bar.datetime > self.last_bar_time:
@@ -315,7 +324,7 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         # print(self.last_bar_time.isoformat(), bar.vt_symbol, bar.datetime.isoformat(),
         # self.minute_bars[self.vt_symbol_spot].datetime)
         if all(s in self.minute_bars and self.last_bar_time == self.minute_bars[s].datetime
-               for s in self.vt_symbols_today) and self.vt_symbol_spot in self.minute_bars and self.minute_bars[self.vt_symbol_spot].datetime == self.last_bar_time:
+               for s in self.vt_symbols_today) and (not self.backtest or self.vt_symbol_spot in self.minute_bars and self.minute_bars[self.vt_symbol_spot].datetime == self.last_bar_time):
             self.on_bars()
 
     def on_bars(self):
@@ -331,6 +340,10 @@ class BackwardationRollingStrategyM(StrategyTemplate):
                 self.means[i, j] = self.spread_datas[i, j].mean()
                 self.stds[i, j] = self.spread_datas[i, j].std()
                 self.bands[i, j] = np.clip(self.stds[i, j]*self.boll_multi_m, self.band_floor, self.band_ceil)
+        self.boll_mid = self.means[0, 1]
+        self.boll_up = self.means[0, 1] + self.bands[0, 1]
+        self.boll_down = self.means[0, 1] - self.bands[0, 1]
+
 
         # if bool(self.switches) or bool(self.switch_mapping):
         #     print("after switch", self.switches, self.switch_mapping)
