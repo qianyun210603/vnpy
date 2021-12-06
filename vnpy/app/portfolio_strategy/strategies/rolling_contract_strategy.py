@@ -12,12 +12,8 @@ import numpy as np
 from vnpy.app.portfolio_strategy import StrategyTemplate, StrategyEngine
 from vnpy.trader.utility import BarGenerator
 from vnpy.trader.object import TickData, BarData, TradeData, OrderData
-from vnpy.trader.constant import Direction
-# import requests
-# import re
-# import pysnowball
-# import pytz
 # IF2112.CFFEX,IF2201.CFFEX,IF2203.CFFEX,IF2206.CFFEX
+
 
 class BackwardationRollingStrategyM(StrategyTemplate):
     """"""
@@ -30,7 +26,7 @@ class BackwardationRollingStrategyM(StrategyTemplate):
     boll_multi_m = 3
     boll_multi_fm = 100
     boll_multi_q = 100
-    abandon_date = 0 # for backtesting only
+    abandon_date = 0  # for backtesting only
     backtest = False
 
     target_position = 0
@@ -40,6 +36,9 @@ class BackwardationRollingStrategyM(StrategyTemplate):
     boll_mid = 0.0
     boll_down = 0.0
     boll_up = 0.0
+    boll_std = 0.0
+    spread_0_1_bid = 0.0
+    spread_0_1_ask = 0.0
 
     parameters = [
         "band_floor",
@@ -55,8 +54,11 @@ class BackwardationRollingStrategyM(StrategyTemplate):
     ]
     variables = [
         "boll_mid",
+        "boll_std",
         "boll_down",
         "boll_up",
+        "spread_0_1_bid",
+        "spread_0_1_ask",
     ]
 
     def __init__(
@@ -111,35 +113,13 @@ class BackwardationRollingStrategyM(StrategyTemplate):
             self.targets[vt_symbol] = 0
             self.bgs[vt_symbol] = BarGenerator(self.on_bar)
 
-        # self.spot_timer = None
-        # if not self.backtest:
-        #     self.spot_timer = threading.Thread(target=self._get_spot_price, daemon=True)
-        #     self.spot_timer.start()
-
-    # def _get_spot_price(self):
-    #     while True:
-    #         now_time = datetime.now().time()
-    #         if (time(9, 30) <= now_time <= time(11, 30) or time(13, 0) <= now_time <= time(15, 0)) and now_time.second > 55:
-    #             try:
-    #                 res = pysnowball.quotec('SH000300')
-    #                 self.latest_spot = res['current']
-    #                 self.latest_spot_time = datetime.fromtimestamp(res['timestamp']/1000, tz=pytz.timezone('Asia/Shanghai'))
-    #                 self.write_log("获取指数价格%f" % self.latest_spot)
-    #             except:
-    #                 self.write_log("无法从雪球接口获取，改为新浪")
-    #                 try:
-    #                     res = requests.get('http://hq.sinajs.cn/list=sh000300')
-    #                     obj = re.match(
-    #                         r'var hq_str_sh000300="沪深300,([0-9.]+),.+,(\d{4}-\d{2}-\d{2},\d{2}:\d{2}:\d{2},\d+),";\n',  res.text
-    #                     )
-    #                     price_str, time_str = obj.groups()
-    #                     self.latest_spot = float(price_str)
-    #                     self.latest_spot_time = datetime.strptime(time_str, "%Y-%m-%d,%H:%M:%S,%f")
-    #                     self.write_log("获取指数价格%f" % self.latest_spot)
-    #                 except Exception:
-    #                     pass
-    #             finally:
-    #                 time.sleep(0.5)
+    def __del__(self):
+        self.write_log("strategy destroyed")
+        # cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.__class__.__name__)
+        # os.makedirs(cache_path, exist_ok=True)
+        # status_path = os.path.join(cache_path, 'status.bin')
+        # with open(status_path, "wb") as f:
+        #     pickle.dump({'pos': self.pos}, f)
 
     def _load_auxiliary_data(self):
         cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.__class__.__name__)
@@ -172,7 +152,15 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         Callback when strategy is inited.
         """
         self.write_log("策略初始化")
+        cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.__class__.__name__)
+        os.makedirs(cache_path, exist_ok=True)
+        # status_path = os.path.join(cache_path, 'status.bin')
+        # with open(status_path, "rb") as f:
+        #     status_vars: dict = pickle.load(f)
+        # for field, value in status_vars.items():
+        #     setattr(self, field, value)
         self.load_bars(max(self.abandon_date, self.boll_window // 240 + 1))
+        # self.write_log(str(self.pos))
 
     def on_start(self):
         """
@@ -189,7 +177,6 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         self.vt_symbols_today = [x + '.CFFEX' for x in raw]
         self.expiries = [x.to_pydatetime().replace(hour=16) for x in self.contract_info.loc[raw, 'end_date']]
         self.days_to_expiry = np.array([(e - today).days for e in self.expiries])
-
 
     def on_stop(self):
         """
@@ -240,20 +227,31 @@ class BackwardationRollingStrategyM(StrategyTemplate):
 
         holdings = [self.get_pos(vt_s) for vt_s in self.vt_symbols_today[:2]]
 
-        if all(h==0 for h in holdings) and not bool(self.get_all_active_orderids()):
+        if all(h == 0 for h in holdings) and not bool(self.get_all_active_orderids()):
+            self.write_log("初始买入")
             self.buy(self.vt_symbols_today[0], ticks[0].ask_price_1+1, 1)
             if self.backtest:
                 self.sell(self.vt_symbol_spot, self.ticks[self.vt_symbol_spot].bid_price_1-1, 1)
             return
         i, j = 0, 1
-        if holdings[i] > 0 and (self.days_to_expiry[i] == 0 or ticks[i].bid_price_1 - ticks[j].ask_price_1 > self.means[i, j] + self.bands[i, j]):
+        self.spread_0_1_bid = ticks[i].bid_price_1 - ticks[j].ask_price_1
+        self.spread_0_1_ask = ticks[i].ask_price_1 - ticks[j].bid_price_1
+        if holdings[i] > 0 and (self.days_to_expiry[i] == 0 or self.spread_0_1_bid > self.boll_up):
             # print(self.days_to_expiry)
             sources.add(i)
             target = j
-        elif holdings[j] > 0 and (self.days_to_expiry[i] > 0 and ticks[i].bid_price_1 - ticks[j].ask_price_1 < self.means[i, j] - self.bands[i, j]):
+            self.write_log(
+                str(holdings) + " " + f"({ticks[i].bid_price_1:.2f}, {ticks[i].ask_price_1:.2f}) --"
+                                      f" ({ticks[j].bid_price_1:.2f}, {ticks[j].ask_price_1:.2f})"
+            )
+        elif holdings[j] > 0 and (self.days_to_expiry[i] > 0 and self.spread_0_1_ask < self.boll_down):
             # print(self.days_to_expiry)
             sources.add(j)
             target = i
+            self.write_log(
+                str(holdings) + " " + f"({ticks[i].bid_price_1:.2f}, {ticks[i].ask_price_1:.2f}) --"
+                                      f" ({ticks[j].bid_price_1:.2f}, {ticks[j].ask_price_1:.2f})"
+            )
 
         try:
             for f, t in list(self.switch_mapping.items()):
@@ -263,15 +261,14 @@ class BackwardationRollingStrategyM(StrategyTemplate):
                     for oid in self.switches[t][3]:
                         order = self.get_order(oid)
                         if order and order.is_active():
-                            print("canceled", oid, order.vt_symbol, order.price, order.direction.name,
-                                  self.ticks[order.vt_symbol].bid_price_1 if order.direction == Direction.SHORT else
-                                  self.ticks[order.vt_symbol].ask_price_1, order.datetime.isoformat(), self.ticks[order.vt_symbol].datetime.isoformat())
+                            self.write_log(f"canceled: {oid}: {order.vt_symbol} {order.price} {order.direction.name}")
                             self.cancel_order(oid)
-                    self.switches[t][3] = [oid for oid in self.switches[t][3] if oid in self.orders and self.orders[oid].is_active()]
+                    self.switches[t][3] = [oid for oid in self.switches[t][3]
+                                           if oid in self.orders and self.orders[oid].is_active()]
                     if self.switches[t][1] >= self.switches[t][2]:
                         del self.switch_mapping[f]
                         del self.switches[t]
-        except:
+        except Exception:
             import traceback
             print(tick.datetime.isoformat())
             traceback.print_exc()
@@ -311,7 +308,6 @@ class BackwardationRollingStrategyM(StrategyTemplate):
                 self.debug_file.write(
                     f"{self.vt_symbols_today[idx]}->{self.vt_symbols_today[target]}@{target_price}\n")
 
-
     def on_bar(self, bar: BarData) -> None:
         if bar.datetime.date() > max(self.last_bar_time, self.last_tick_time).date():
             self.on_day_open(bar.datetime.date())
@@ -324,7 +320,9 @@ class BackwardationRollingStrategyM(StrategyTemplate):
         # print(self.last_bar_time.isoformat(), bar.vt_symbol, bar.datetime.isoformat(),
         # self.minute_bars[self.vt_symbol_spot].datetime)
         if all(s in self.minute_bars and self.last_bar_time == self.minute_bars[s].datetime
-               for s in self.vt_symbols_today) and (not self.backtest or self.vt_symbol_spot in self.minute_bars and self.minute_bars[self.vt_symbol_spot].datetime == self.last_bar_time):
+               for s in self.vt_symbols_today) and (
+                not self.backtest or self.vt_symbol_spot in self.minute_bars and
+                self.minute_bars[self.vt_symbol_spot].datetime == self.last_bar_time):
             self.on_bars()
 
     def on_bars(self):
@@ -341,16 +339,15 @@ class BackwardationRollingStrategyM(StrategyTemplate):
                 self.stds[i, j] = self.spread_datas[i, j].std()
                 self.bands[i, j] = np.clip(self.stds[i, j]*self.boll_multi_m, self.band_floor, self.band_ceil)
         self.boll_mid = self.means[0, 1]
+        self.boll_std = self.stds[0, 1]
         self.boll_up = self.means[0, 1] + self.bands[0, 1]
         self.boll_down = self.means[0, 1] - self.bands[0, 1]
 
-
-        # if bool(self.switches) or bool(self.switch_mapping):
-        #     print("after switch", self.switches, self.switch_mapping)
         self.put_event()
 
     def update_order(self, order: OrderData) -> None:
         super(BackwardationRollingStrategyM, self).update_order(order)
+        self.write_log(str(order))
         # if order.datetime.replace(tzinfo=None) > datetime(2021, 3, 5):
         #     pass
         #     print(order)
@@ -365,7 +362,8 @@ class BackwardationRollingStrategyM(StrategyTemplate):
             # print(f"{trade.datetime.isoformat()} - switch from {from_vt_symbol} @{close_price:.2f} to"
             #       f" {trade.vt_symbol} @{trade.price:.2f})")
             self.switches[trade.vt_symbol][1] -= trade.volume
-            close_price = self.ticks[from_vt_symbol].bid_price_1 - self.price_add if from_vt_symbol in self.ticks else self.minute_bars[from_vt_symbol].open_price - self.price_add
+            close_price = self.ticks[from_vt_symbol].bid_price_1 - self.price_add if from_vt_symbol in self.ticks \
+                else self.minute_bars[from_vt_symbol].open_price - self.price_add
             self.sell(from_vt_symbol, close_price, trade.volume)
             self.switches[trade.vt_symbol][2] += trade.volume
             self.debug_file.write(
@@ -380,4 +378,3 @@ class BackwardationRollingStrategyM(StrategyTemplate):
             self.debug_file.write(
                 f"{trade.vt_symbol}@{trade.price}->{to_vt_symbol}\n"
             )
-
