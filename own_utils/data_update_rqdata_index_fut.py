@@ -18,19 +18,19 @@ logging.getLogger('').addHandler(console)
 
 
 EXCH_MAPPING = {
-    'CCFX': Exchange.CFFEX,
-    'XINE': Exchange.INE,
-    'XSGE': Exchange.SHFE,
-    'XZCE': Exchange.CZCE,
-    'XDCE': Exchange.DCE,
+    'INE': Exchange.INE,
+    'SHFE': Exchange.SHFE,
+    'CZCE': Exchange.CZCE,
+    'DCE': Exchange.DCE,
     'XSHG': Exchange.SSE,
     'XSHE': Exchange.SZSE,
+    'CFFEX': Exchange.CFFEX
 }
 
 
 if __name__ == "__main__":
     rqdatac.init('15201306382', 'Cyq06284015')
-    all_stocks = rqdatac.all_instruments(type='CS').sort_values(by='order_book_id').replace('0000-00-00', '2100-01-01')
+    all_futures = rqdatac.all_instruments(type='Future').replace('0000-00-00', '2100-01-01')
 
     num_klines = 0
 
@@ -39,10 +39,10 @@ if __name__ == "__main__":
     for interval in (Interval.MINUTE, Interval.DAILY):
         myidx = 0 # list(all_stocks.trading_code).index('689009') + 1
         idx = myidx
-        for _, row in all_stocks.iloc[myidx:, :].iterrows():
+        for _, row in all_futures.iloc[myidx:, :].iterrows():
             try:
-                symbol, exch_str = row.order_book_id.split('.')
-                exch = EXCH_MAPPING[exch_str]
+                symbol = row.order_book_id
+                exch = EXCH_MAPPING[row.exchange]
                 if row.listed_date.startswith('2999'):
                     logging.info(f"{idx}: 0 bars for {symbol}.{exch.name} saved")
                     idx += 1
@@ -51,7 +51,7 @@ if __name__ == "__main__":
                     row.de_listed_date = row.de_listed_date.replace("2999", "2100")
                 start_date = max(
                     pd.Timestamp(row.listed_date, tz='Asia/Shanghai'), bar_in_db_last_dates.get((symbol, exch, interval),
-                        pd.Timestamp(year=2014, month=1, day=1, tz='Asia/Shanghai')) + pd.Timedelta(minutes=1, seconds=1),
+                        pd.Timestamp(year=2017, month=1, day=1, tz='Asia/Shanghai')) + pd.Timedelta(minutes=1, seconds=1),
                 )
                 # print(start_date, bar_in_db_last_dates.get((symbol, exch),
                 #         pd.Timestamp(year=2014, month=1, day=1, tz='Asia/Shanghai')))
@@ -61,6 +61,7 @@ if __name__ == "__main__":
                     logging.info(f"{idx}: 0 {interval.name} bars for {symbol}.{exch.name} saved")
                     idx += 1
                     continue
+
                 df_price = rqdatac.get_price(
                     order_book_ids=row.order_book_id,
                     start_date=start_date,
