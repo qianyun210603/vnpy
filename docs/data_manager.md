@@ -16,7 +16,7 @@ DataManager是用于**历史数据管理**的功能模块，用户可以通过�
 
 ```
 # 写在顶部
-from vnpy.app.data_manager import DataManagerApp
+from vnpy_datamanager import DataManagerApp
 
 # 写在创建main_engine对象后
 main_engine.add_app(DataManagerApp)
@@ -67,24 +67,20 @@ DataManager模块提供了一键下载历史数据的功能，点击右上角【
 
 注意下载完成后的历史数据会保存在本地数据库中，后续回测或实盘时可以直接使用，无需每次都重复下载。
 
-### 数据来源：RQData（期货、股票、期权）
+### 数据来源：数据服务（期货、股票、期权）
 
-[RQData](https://www.ricequant.com/welcome/purchase?utm_source=vnpy)提供国内期货、股票以及期权的历史数据。在使用前需要保证RQData已经正确配置（配置方法详见基本使用篇的全局配置部分）。
+以RQData为例，[RQData](https://www.ricequant.com/welcome/purchase?utm_source=vnpy)提供国内期货、股票以及期权的历史数据。在使用前需要保证数据服务已经正确配置（配置方法详见基本使用篇的全局配置部分）。
 
-### 数据来源：数字货币（现货、期货、永续）
+### 数据来源：IB（外盘期货、股票、现货等）
 
-各大数字货币交易所都直接提供自家的历史数据下载，但每家交易所可以获取的历史数据长度限制有所区别，注意下载前需要先在VN Trader主界面连接好对应的接口。
-
-### 数据来源：IB（外盘期货、股票、外汇等）
-
-Interactive Brokers盈透证券（IB）提供丰富的外盘市场历史数据下载（包括股票、期货、期权、外汇等），注意下载前需要先启动IB TWS交易软件，并在VN Trader主界面连接好IB接口，并订阅所需合约行情。
+Interactive Brokers盈透证券（IB）提供丰富的外盘市场历史数据下载（包括股票、期货、期权、现货等），注意下载前需要先启动IB TWS交易软件，并在VN Trader主界面连接好IB接口，并订阅所需合约行情。
 
 
 ## 导入数据
 
 如果已经从其他渠道获取到了CSV格式的数据文件，可以通过DataManager的数据导入功能，将其快速导入vn.py数据库。点击右上角的【导入数据】按钮，会弹出从如下图所示的对话框：
 
-![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/data_manager/16.png)
+![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/data_manager/21.png)
 
 点击顶部的【选择文件】按钮，会弹出窗口选择要导入的CSV文件路径，如下图所示：
 
@@ -96,6 +92,7 @@ Interactive Brokers盈透证券（IB）提供丰富的外盘市场历史数据�
   - 格式详见本章[下载数据](#jump)部分的介绍；
   - 请注意，导入的合约代码（symbol）和交易所（exchange）两个字段组合起来，才能构成在CTA回测等模块中使用的本地代码（vt_symbol）；
   - 若合约代码为**IF2003**，交易所选择**CFFEX**（中金所），则在CtaBacktester中回测要用到的本地代码应为**IF2003.CFFEX**；
+  - 可以对时间戳时区进行选择；
 - 表头信息
   - 可查看CSV文件的表头信息，并将对应的表头字符串输入在表头信息中；
   - 对于CSV文件中不存在的字段（如股票数据没有【持仓量】字段），请留空即可；
@@ -103,21 +100,21 @@ Interactive Brokers盈透证券（IB）提供丰富的外盘市场历史数据�
   - 采用Python内置库datetime模块的时间格式定义，来解析时间戳字符串；
   - 默认时间格式为"%Y-%m-%d %H:%M:%S"，对应的是"2017-1-3 0:00:00"；
   - 如果时间戳是"2017-1-3  0:00"，那么时间格式应该是"%Y-%m-%d %H:%M"。
-  
+
 填写完毕，则如下图所示：
 
-![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/data_manager/4.png)
+![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/data_manager/22.png)
 
 点击【确定】按钮，开始从CSV文件导入数据到数据库中。导入过程中界面会处于半卡住的情况，CSV文件越大（数据量越多），卡住的时间也会越长。成功载入之后，会弹出窗口显示载入成功，如下图所示：
 
-![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/data_manager/6.png)
+![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/data_manager/20.png)
 
 
 ## 查看数据
 
 目前VN Trader中获取数据的方式一共有三种：
 
-- 通过RQData或者交易接口下载
+- 通过数据服务或者交易接口下载
 
 - 从CSV文件导入
 
@@ -170,7 +167,7 @@ Interactive Brokers盈透证券（IB）提供丰富的外盘市场历史数据�
 
 ## 更新数据
 
-在用户**配置了RQData数据服务**或者**交易接口（已连接）提供充足的历史数据**的情况下，点击右上角的【更新数据】按钮，即可基于数据库中已有的合约数据，执行一键自动下载更新。
+在用户**配置了数据服务**或者**交易接口（已连接）提供充足的历史数据**的情况下，点击右上角的【更新数据】按钮，即可基于数据库中已有的合约数据，执行一键自动下载更新。
 
 更新前图形界面显示如下图：
 
