@@ -36,5 +36,7 @@ _templates
 # Misc
 .DS_Store
 
+*.log
+
 vnpy/app/portfolio_strategy/strategies/*/*.txt
 
