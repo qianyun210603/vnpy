@@ -2,13 +2,13 @@
 
 ## 功能简介
 
-PortfolioStrategy是用于**多合约组合策略实盘**的功能模块，用户可以通过图形界面操作来便捷完成策略初始化、策略启动、策略停止、策略参数编辑以及策略移除等任务。
+PortfolioStrategy是用于**多合约组合策略实盘**的功能模块，用户可以通过其UI界面操作来便捷完成策略初始化、策略启动、策略停止、策略参数编辑以及策略移除等任务。
 
 ## 加载启动
 
-### Veighna Station加载
+### VeighNa Station加载
 
-启动登录Veighna Station后，点击【Veighna Trader】按钮，在配置对话框中的【上层应用】栏勾选【PortfolioStrategy】。
+启动登录VeighNa Station后，点击【交易】按钮，在配置对话框中的【应用模块】栏勾选【PortfolioStrategy】。
 
 ### 脚本加载
 
@@ -27,7 +27,7 @@ main_engine.add_app(PortfolioStrategyApp)
 
 <span id="jump">
 
-对于用户自行开发的策略，需要放到Veighna Trader运行时目录下的**strategies**目录中，才能被识别加载。具体的运行时目录路径，可以在Veighna Trader主界面顶部的标题栏查看。
+对于用户自行开发的策略，需要放到VeighNa Trader运行时目录下的**strategies**目录中，才能被识别加载。具体的运行时目录路径，可以在VeighNa Trader主界面顶部的标题栏查看。
 
 对于在Windows上默认安装的用户来说，放置策略的strategies目录路径通常为：
 
@@ -39,7 +39,7 @@ main_engine.add_app(PortfolioStrategyApp)
 
 </span>
 
-在启动模块之前，请先连接交易接口（连接方法详见基本使用篇的连接接口部分）。看到Veighna Trader主界面【日志】栏输出“合约信息查询成功”之后再启动模块，如下图所示：
+在启动模块之前，请先连接交易接口（连接方法详见基本使用篇的连接接口部分）。看到VeighNa Trader主界面【日志】栏输出“合约信息查询成功”之后再启动模块，如下图所示：
 
 ![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/cta_strategy/1.png)
 
@@ -111,7 +111,7 @@ main_engine.add_app(PortfolioStrategyApp)
 
 初始化完成后，可观察到此时该策略实例的【inited】状态已经为【True】。说明该策略实例已经加载过历史数据并完成初始化了。【trading】状态还是为【False】，说明此时该策略实例还不能开始自动交易。
 
-请注意，与CTA策略不同，如果创建实例时输入错误的vt_symbol，多合约组合策略模块会在初始化时报错而不是在创建策略实例时报错，如下图所示：
+请注意，与CTA策略不同，如果创建实例时输入错误的vt_symbol，多合约组合策略模块会在初始化时报错，而不是在创建策略实例时报错，如下图所示：
 
 ![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/portfolio_strategy/7.png)
 
@@ -125,11 +125,11 @@ main_engine.add_app(PortfolioStrategyApp)
 
 在上一步策略初始化的过程中，尽管策略同样在接收（历史）数据，并调用对应的功能函数，但因为【trading】状态为【False】，所以并不会有任何真正的委托下单操作或者交易相关的日志信息输出。
 
-如果启动之后，策略发出了委托，可以去Veighna Trader主界面【委托】栏查看委托订单细节，如下图所示：
+如果启动之后，策略发出了委托，可以去VeighNa Trader主界面【委托】栏查看委托订单细节，如下图所示：
 
 ![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/portfolio_strategy/9.png)
 
-请注意，与CTA策略模块不同，多合约组合策略不提供本地停止单功能，所以UI界面上不会有停止单的显示区域了。
+请注意，与CTA策略模块不同，多合约组合策略**不提供本地停止单功能**，所以UI界面上不会有停止单的显示区域了。
 
 
 ### 停止
@@ -142,7 +142,7 @@ main_engine.add_app(PortfolioStrategyApp)
 
 此时可观察到该策略实例的【trading】状态已变为【False】，说明此时该策略实例已经停止自动交易了。
 
-在多合约组合策略的实盘交易过程中，正常情况应该让策略在整个交易时段中都自动运行，尽量不要有额外的暂停重启类操作。对于国内期货市场来说，应该在交易时段开始前，启动策略的自动交易，然后直到收盘后，再关闭自动交易。因为现在CTP夜盘收盘后也会关闭系统，早上开盘前重启，所以夜盘收盘后也需要停止策略，关闭Veighna Trader了。
+在多合约组合策略的实盘交易过程中，正常情况应该让策略在整个交易时段中都自动运行，尽量不要有额外的暂停重启类操作。对于国内期货市场来说，应该在交易时段开始前，启动策略的自动交易，然后直到收盘后，再关闭自动交易。因为现在CTP夜盘收盘后也会关闭系统，早上开盘前重启，所以夜盘收盘后也需要停止策略，关闭VeighNa Trader了。
 
 ### 编辑
 
@@ -221,8 +221,6 @@ main_engine.add_app(PortfolioStrategyApp)
 
 在所有策略实例创建成功后，点击右上角的【全部初始化】按钮，则可批量初始化策略实例，如下图所示：
 
-点击【全部初始化】后，如下图所示：
-
 ![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/portfolio_strategy/19.png)
 
 ### 全部启动
@@ -239,7 +237,7 @@ main_engine.add_app(PortfolioStrategyApp)
 
 ## 多合约组合策略模板（StrategyTemplate）
 
-多合约组合策略模板提供完整的信号生成和委托管理功能，用户可以基于该模板(位于site-packages\vnpy_portfoliostrategy\template中)自行开发多合约组合策略。
+多合约组合策略模板提供了信号生成和委托管理功能，用户可以基于该模板(位于site-packages\vnpy_portfoliostrategy\template中)自行开发多合约组合策略。
 
 用户自行开发的策略可以放在用户运行文件夹下的[strategies](#jump)文件夹内。
 
@@ -341,9 +339,11 @@ __init__函数是策略类的构造函数，需要与继承的StrategyTemplate�
 
 1 . 通过super( )的方法继承策略模板，在__init__( )函数中传入策略引擎、策略名称、vt_symbols以及参数设置（以上参数均由策略引擎在使用策略类创建策略实例时自动传入，用户无需进行设置）。
 
-2 . 创建策略所需的存放不同合约K线时间序列管理模块和策略变量的字典。
+2 . 创建策略所需的存放不同合约K线时间序列管理实例（ArrayManager）和策略变量的字典。
 
-3 . 分别为策略交易的不同合约创建K线时间序列管理实例（ArrayManager）和目标仓位变量并放进字典里。
+3 . 分别为策略交易的不同合约创建ArrayManager和目标仓位变量并放进字典里。
+
+ArrayManager的默认长度为100，如需调整ArrayManager的长度，可传入size参数进行调整（size不能小于计算指标的周期长度）。
 
 4 . 调用组合策略K线生成模块（PortfolioBarGenerator）：通过时间切片将Tick数据合成1分钟K线数据。如有需求，还可合成更长的时间周期数据，如15分钟K线。
 
@@ -355,22 +355,13 @@ __init__函数是策略类的构造函数，需要与继承的StrategyTemplate�
 
 而不用给pbg实例传入需要基于on_bars周期合成的更长K线周期，以及接收更长K线周期的函数名。
 
-请注意，合成X分钟线时，X必须设为能被60整除的数（60除外）。对于小时线的合成没有这个限制。
+请注意：
 
-PortfolioBarGenerator默认的基于on_bar函数合成长周期K线的数据频率是分钟级别，如果需要基于合成的小时线或者更长周期的K线交易，请在策略文件顶部导入Interval，并传入对应的数据频率给bg实例。如下方代码所示：
+ - 合成X分钟线时，X必须设为能被60整除的数（60除外）。对于小时线的合成没有这个限制。
 
-文件顶部导入Interval：
+ - PortfolioBarGenerator默认的基于on_bar函数合成长周期K线的数据频率是分钟级别，如果需要基于合成的小时线或者更长周期的K线交易，请在策略文件顶部导入Interval，并传入对应的数据频率给bg实例。
 
-```python 3
-from vnpy.trader.constant import Interval
-```
-
-__init__函数创建bg实例时传入数据频率：
-
-```python 3
-        self.pbg = BarGenerator(self.on_bars, 2, self.on_2hour_bars, Interval.HOUR)
-```
-注意：self.on_hour_bars函数名在程序内部已使用，1小时请使用self.on_1_hour_bars或者其他命名，否则会产生意料之外的问题。
+ - **self.on_hour_bars函数名在程序内部已使用**，如需合成1小时K线，请使用self.on_1_hour_bars或者其他命名。
 
 ### 策略引擎调用的函数
 
@@ -459,7 +450,7 @@ StrategyTemplate中以on开头的函数称为回调函数，在编写策略的�
         self.pbg.update_tick(tick)
 ```
 
-请注意，on_tick只有实盘中会调用，回测不支持。
+请注意，on_tick函数只在实盘中会被调用，回测不支持。
 
 **on_bars**
 
@@ -592,11 +583,15 @@ StrategyTemplate中以on开头的函数称为回调函数，在编写策略的�
 
 buy/sell/short/cover都是策略内部的负责发单的交易请求类函数。策略可以通过这些函数给策略引擎发送交易信号来达到下单的目的。
 
-以下方buy函数的代码为例，可以看到，**具体要交易合约的代码**，价格和数量是必填的参数，锁仓转换和净仓转换则默认为False。也可以看到，函数内部收到传进来的参数之后就调用了StrategyTemplate里的send_order函数来发单（因为是buy指令，则自动把方向填成了LONG，开平填成了OPEN）
+以下方buy函数的代码为例，可以看到，**具体要交易合约的代码**，价格和数量是必填的参数，锁仓转换和净仓转换则默认为False。也可以看到，函数内部收到传进来的参数之后就调用了StrategyTemplate里的send_order函数来发单（因为是buy指令，则自动把方向填成了LONG，开平填成了OPEN）。
+
+与CTA策略模块不同，组合策略模块不提供本地停止单功能，所以委托函数中移除了stop参数。
 
 如果lock设置为True，那么该笔订单则会进行锁仓委托转换（在有今仓的情况下，如果想平仓，则会先平掉所有的昨仓，然后剩下的部分都进行反向开仓来代替平今仓，以避免平今的手续费惩罚）。
 
 如果net设置为True，那么该笔订单则会进行净仓委托转换（基于整体账户的所有仓位，根据净仓持有方式来对策略下单的开平方向进行转换）。但是净仓交易模式与锁仓交易模式互斥，因此net设置为True时，lock必须设置为False。
+
+请注意，如果向上期所发出平仓委托，因为该交易所必须指定平今、平昨，底层会对其平仓指令自动进行转换。因为上期所部分品种有平今优惠，所以默认是以平今优先的方式发出委托的（如果交易的标的在上期所平昨更优惠的话，可以自行在vnpy.trader.converter的convert_order_request_shfe函数中做适当的修改）。
 
 ```python 3
     def buy(self, vt_symbol: str, price: float, volume: float, lock: bool = False, net: bool = False) -> List[str]:
@@ -615,8 +610,6 @@ buy/sell/short/cover都是策略内部的负责发单的交易请求类函数。
 * 出参：vt_orderids: List[str] / 无
 
 send_order函数是策略引擎调用的发送委托的函数。一般在策略编写的时候不需要单独调用，通过buy/sell/short/cover函数发送限价委托即可。
-
-请注意，组合策略模块只支持限价单交易，不提供本地停止单功能。
 
 实盘的时候，收到传进来的参数后，会调用round_to函数基于合约的pricetick和min_volume对委托的价格和数量进行处理。
 
@@ -690,7 +683,7 @@ cancel_order和cancel_all都是负责撤单的交易请求类函数。cancel_ord
 
 在策略中调用load_bars函数，可以在策略初始化时加载K线数据。
 
-如下方代码所示，load_bars函数调用时，默认加载的天数是10，频率是一分钟，对应也就是加载10天的1分钟K线数据。在回测时，10天指的是10个交易日，而在实盘时，10天则是指的是自然日，因此建议加载的天数宁可多一些也不要太少。
+如下方代码所示，load_bars函数调用时，默认加载的天数是10，频率是一分钟，对应也就是加载10天的1分钟K线数据。在回测时，10天指的是10个交易日，而在实盘时，10天则是指的是自然日，因此建议加载的天数宁可多一些也不要太少。加载时会先依次尝试通过交易接口、数据服务、数据库获取历史数据，直到获取历史数据或返回空。
 
 ```python 3
     def load_bars(self, days: int, interval: Interval = Interval.MINUTE) -> None:

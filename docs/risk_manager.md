@@ -1,14 +1,14 @@
-# RiskManager - 事前风控模块
+# RiskManager - 事前风控管理模块
 
 ## 功能简介
 
-RiskManager模块是用于**事前风险检测与交易控制**的功能模块，用户可以通过图形界面操作来便捷完成启动风控，参数修改和停止风控等任务。
+RiskManager模块是用于**事前风控管理**的功能模块，用户可以通过其UI界面操作来便捷完成启动风控，参数修改和停止风控等任务。
 
 ## 加载启动
 
-### Veighna Station加载
+### VeighNa Station加载
 
-启动登录Veighna Station后，点击【Veighna Trader】按钮，在配置对话框中的【上层应用】栏勾选【RiskManager】。
+启动登录VeighNa Station后，点击【交易】按钮，在配置对话框中的【应用模块】栏勾选【RiskManager】。
 
 ### 脚本加载
 
