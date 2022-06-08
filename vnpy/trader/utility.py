@@ -299,7 +299,7 @@ class BarGenerator:
         self.window_bar.open_interest = bar.open_interest
 
         # Check if window bar completed
-        if not (bar.datetime.minute + 1) % self.window:
+        if not (bar.datetime.hour * 60 + bar.datetime.minute + 1) % self.window:
             self.on_window_bar(self.window_bar)
             self.window_bar = None
 

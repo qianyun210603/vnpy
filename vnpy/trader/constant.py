@@ -124,6 +124,9 @@ class Exchange(Enum):
     OTC = "OTC"             # OTC Product (Forex/CFD/Pink Sheet Equity)
     IBKRATS = "IBKRATS"     # Paper Trading Exchange of IB
 
+    OKEXD = "OKEXD"         # okex derivative
+    OKEXS = "OKEXS"         # okex spot
+
     # Special Function
     LOCAL = "LOCAL"         # For local generated data
 
