@@ -1,3 +1,43 @@
+# 3.3.0版本
+
+## 新增
+1. 新增数据库组件vnpy.trader.database中的TickOverview对象
+2. 新增掘金仿真环境交易接口vnpy_gm
+3. BaseData基础数据类型增加extra字段（字典类型），用于传送任意相关数据
+
+## 调整
+1. 使用Python内置的zoneinfo库替换三方的pytz库
+2. 调整相关交易接口、数据服务接口、数据库适配器、应用模块，使用新的ZoneInfo对象来标识时区信息
+3. 数据库适配器接口vnpy.trader.database写入数据时，新增流式写入参数stream，提高行情录制性能
+
+
+# 3.2.0版本
+
+## 新增
+1. 添加广州期货交易所枚举值字段GFEX
+2. 新增CTP期权（ETF）穿透式测试接口vnpy_sopttest
+3. 新增Currency.CAD（加元）枚举值
+4. 新增Exchange.TSE（多伦多交易所）和Exchange.AMEX（美洲交易所）枚举值
+5. 新增vnpy_taos，涛思数据TDengine时序数据库适配器
+5. 新增vnpy_timescaledb，TimescaleDB时序数据库适配器
+
+## 调整
+1. 更新vnpy_ctp/vnpy_ctptest支持广州期货交易所
+2. 更新vnpy_tora的现货API接口到最新版本：API_Python3.7_交易_v4.0.3_20220222
+3. 更新vnpy_tora的期权API接口到最新版本：API_Python3.7_v1.3.2_20211201
+4. 更新vnpy_esunny/vnpy_tap添加关闭接口时对于API退出函数的调用
+5. 移除vnpy_ctastrategy/vnpy_ctabacktester/vnpy_optionmaster的反向合约支持
+6. 增加vnpy_ib对于沪股通、深股通、多伦多交易所、美洲交易所的支持
+7. 增加vnpy_ib对于指数行情数据的支持
+8. 添加vnpy_ctastrategy策略交易管理界面的策略实例查找功能
+
+## 修复
+
+1. 修复vnpy_mongodb中K线数据量统计的问题（使用新的count_documents函数）
+2. 修复由于PySide6对象销毁先于__del__调用，导致的BaseMonitor衍生组件无法自动保存界面状态的问题
+
+
+
 # 3.1.0版本
 
 ## 新增
@@ -50,7 +90,6 @@
 5. vnpy_uft升级使用3.7.2.4版本的恒生API接口
 
 ## 剥离
-1. 将南华期货NHTD交易接口剥离到vnpy_nhtd项目中
 2. 将国泰君安证券统一接入网关交易接口剥离到vnpy_hft项目中
 3. 将顶点飞创交易接口剥离到vnpy_sec项目中
 4. 将RPC服务和接口剥离到vnpy_rpcservice项目中

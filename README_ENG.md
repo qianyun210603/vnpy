@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-    <img src ="https://img.shields.io/badge/version-3.1.0-blueviolet.svg"/>
+    <img src ="https://img.shields.io/badge/version-3.3.0-blueviolet.svg"/>
     <img src ="https://img.shields.io/badge/platform-windows|linux|macos-yellow.svg"/>
     <img src ="https://img.shields.io/badge/python-3.10-blue.svg" />
     <img src ="https://img.shields.io/github/workflow/status/vnpy/vnpy/Python%20application/master"/>
@@ -47,8 +47,6 @@ For financial institution users of VeighNa, a special [VeighNa Institutional Use
         * APEX XSpeed ([sec](https://www.github.com/vnpy/vnpy_sec)): ETF options
 
         * APEX HTS ([hts](https://www.github.com/vnpy/vnpy_hts)): ETF options
-
-        * NHTD ([nhtd](https://www.github.com/vnpy/vnpy_nhtd)): domestic futures, ETF options
 
         * XTP ([xtp](https://www.github.com/vnpy/vnpy_xtp)): domestic securities (A shares), ETF options
 
