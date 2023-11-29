@@ -24,6 +24,7 @@ from vnpy_ctp import CtpGateway
 # from vnpy_ost import OstGateway
 # from vnpy_hft import GtjaGateway
 
+# from vnpy_paperaccount import PaperAccountApp
 from vnpy_ctastrategy import CtaStrategyApp
 from vnpy_ctabacktester import CtaBacktesterApp
 #from vnpy_spreadtrading import SpreadTradingApp
@@ -39,7 +40,7 @@ from vnpy_datarecorder import DataRecorderApp
 from vnpy_riskmanager import RiskManagerApp
 #from vnpy_webtrader import WebTraderApp
 from vnpy_portfoliomanager import PortfolioManagerApp
-#from vnpy_paperaccount import PaperAccountApp
+
 
 
 def main():

@@ -11,4 +11,5 @@ deap
 pyzmq
 plotly
 importlib-metadata
+tqdm
 backports.zoneinfo; python_version < '3.9'

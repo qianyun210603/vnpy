@@ -20,7 +20,7 @@ SpreadTrading是用于**多合约价差套利**的功能模块，用户可以通
 from vnpy_spreadtrading import SpreadTradingApp
 
 # 写在创建main_engine对象后
-main_engine.add_app(spread_trading)         
+main_engine.add_app(SpreadTradingApp)
 ```
 
 
@@ -100,7 +100,7 @@ main_engine.add_app(spread_trading)
 请注意，在多条腿并且期货合约规模不等时，构建价差合约会相对困难一些，如构建虚拟钢厂套利所用到的价差合约时，计算公式如下：
 
 - 螺纹钢生产技艺是16吨铁矿石加上5吨焦炭练成10吨螺纹钢。
-- 基于价格乘数的价差spread = 1* RB - 1.6\*I  - 0.5\*O。
+- 基于价格乘数的价差spread = 1* RB - 1.6\*I  - 0.5\*J。
 - 但是由于螺纹是10吨/手，铁矿石和焦炭都是100吨/手，所以他们交易乘数是1：10：10；
 - 故基于最大公约数规则，其实际交易手数关系是每买入100手螺纹钢（1000吨），需要卖出16手铁矿石（1600吨）和5手焦炭（500吨）完成对冲。
 
@@ -247,6 +247,7 @@ main_engine.add_app(spread_trading)
 ![](https://vnpy-doc.oss-cn-shanghai.aliyuncs.com/spread_trading/23.png)
 
 可观察到此时该策略实例的【inited】状态已经为【True】。说明该策略实例已经调用过load_bar函数加载历史数据并完成初始化了。【trading】状态还是为【False】，说明此时该策略实例还不能开始自动交易。
+
 #### 启动
 
 策略实例初始化成功，【inited】状态为【True】时，才能启动该策略的自动交易功能。点击该策略实例下的【启动】按钮，即可启动该策略实例。成功启动后，【日志】组件则会输出相应信息（请注意，策略启动并不代表算法启动，算法启动状态取决于策略逻辑），如下图所示：
@@ -650,13 +651,13 @@ SpreadStrategyTemplate中以on开头的函数称为回调函数，在编写策�
 
 **start_long_algo**
 
-* 入参：direction: Direction, price: float, volume: float, payup: int, interval: int, lock: bool = False, extra: dict = None
+* 入参：price: float, volume: float, payup: int, interval: int, lock: bool = False, extra: dict = None
 
 * 出参：algoid: str
 
 **start_short_algo**
 
-* 入参：direction: Direction, price: float, volume: float, payup: int, interval: int, lock: bool = False, extra: dict = None
+* 入参：price: float, volume: float, payup: int, interval: int, lock: bool = False, extra: dict = None
 
 * 出参：algoid: str
 
