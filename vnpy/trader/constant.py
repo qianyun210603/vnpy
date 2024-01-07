@@ -128,6 +128,7 @@ class Exchange(Enum):
     KRX = "KRX"             # Korean Exchange
     OTC = "OTC"             # OTC Product (Forex/CFD/Pink Sheet Equity)
     IBKRATS = "IBKRATS"     # Paper Trading Exchange of IB
+    AEB = "AEB"             # Amsterdam Exchange
 
     OKEXD = "OKEXD"         # okex derivative
     OKEXS = "OKEXS"         # okex spot
@@ -144,6 +145,7 @@ class Currency(Enum):
     HKD = "HKD"
     CNY = "CNY"
     CAD = "CAD"
+    EUR = "EUR"
 
 
 class Interval(Enum):

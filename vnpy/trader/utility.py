@@ -188,20 +188,21 @@ class BarGenerator:
         daily_end: time = None
     ) -> None:
         """Constructor"""
-        self.bar: BarData = None
+        self.bar: Optional[BarData] = None
         self.on_bar: Callable = on_bar
+        self.pending_trade_in_current_bar: bool = True
 
         self.interval: Interval = interval
         self.interval_count: int = 0
 
-        self.hour_bar: BarData = None
-        self.daily_bar: BarData = None
+        self.hour_bar: Optional[BarData] = None
+        self.daily_bar: Optional[BarData] = None
 
         self.window: int = window
-        self.window_bar: BarData = None
+        self.window_bar: Optional[BarData] = None
         self.on_window_bar: Callable = on_window_bar
 
-        self.last_tick: TickData = None
+        self.last_tick: Optional[TickData] = None
 
         self.daily_end: time = daily_end
         if self.interval == Interval.DAILY and not self.daily_end:
@@ -247,6 +248,7 @@ class BarGenerator:
                 close_price=tick.last_price,
                 open_interest=tick.open_interest
             )
+            self.pending_trade_in_current_bar = self.last_tick is not None and tick.volume == self.last_tick.volume
         else:
             self.bar.high_price = max(self.bar.high_price, tick.last_price)
             if tick.high_price > self.last_tick.high_price:
@@ -259,6 +261,9 @@ class BarGenerator:
             self.bar.close_price = tick.last_price
             self.bar.open_interest = tick.open_interest
             self.bar.datetime = tick.datetime
+            if self.pending_trade_in_current_bar and tick.volume > self.last_tick.volume:
+                self.pending_trade_in_current_bar = False
+                self.bar.open_price = tick.last_price
 
         if self.last_tick:
             volume_change: float = tick.volume - self.last_tick.volume
@@ -336,7 +341,7 @@ class BarGenerator:
             )
             return
 
-        finished_bar: BarData = None
+        finished_bar: Optional[BarData] = None
 
         # If minute is 59, update minute bar into window bar and push
         if bar.datetime.minute == 59:
