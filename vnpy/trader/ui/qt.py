@@ -38,9 +38,7 @@ def create_qapp(app_name: str = "VeighNa Trader") -> QtWidgets.QApplication:
 
     # Set up windows process ID
     if "Windows" in platform.uname():
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            app_name
-        )
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_name)
 
     # Hide help button for all dialogs
     # qapp.setAttribute(QtCore.Qt.AA_DisableWindowContextHelpButton)
@@ -58,11 +56,16 @@ def create_qapp(app_name: str = "VeighNa Trader") -> QtWidgets.QApplication:
     sys.excepthook = excepthook
 
     if sys.version_info >= (3, 8):
+
         def threading_excepthook(args: threading.ExceptHookArgs) -> None:
             """Show exception detail from background threads with QMessageBox."""
             sys.__excepthook__(args.exc_type, args.exc_value, args.exc_traceback)
 
-            msg: str = "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
+            msg: str = "".join(
+                traceback.format_exception(
+                    args.exc_type, args.exc_value, args.exc_traceback
+                )
+            )
             exception_widget.signal.emit(msg)
 
         threading.excepthook = threading_excepthook
@@ -72,6 +75,7 @@ def create_qapp(app_name: str = "VeighNa Trader") -> QtWidgets.QApplication:
 
 class ExceptionWidget(QtWidgets.QWidget):
     """"""
+
     signal: QtCore.Signal = QtCore.Signal(str)
 
     def __init__(self, parent: QtWidgets.QWidget = None) -> None:
@@ -122,3 +126,85 @@ class ExceptionWidget(QtWidgets.QWidget):
     def _open_community(self) -> None:
         """"""
         webbrowser.open("https://www.vnpy.com/forum/forum/2-ti-wen-qiu-zhu")
+
+
+class GatewayAppSelectPanel(QtWidgets.QDialog):
+    checkbox_values_signal = QtCore.Signal(dict)
+
+    def __init__(self, parent=None, available_gateways=None, available_apps=None):
+        super().__init__(parent)
+
+        import importlib.util  # pylint: disable=import-outside-toplevel
+
+        available_gateways = [
+            gw
+            for gw in available_gateways
+            if importlib.util.find_spec(f"vnpy_{gw.lower()}") is not None
+        ]
+        available_apps = [
+            app
+            for app in available_apps
+            if importlib.util.find_spec(f"vnpy_{app.lower()}") is not None
+        ]
+
+        self.setWindowTitle("选择接口和应用")
+
+        # Create first group box
+        self.groupBox1 = QtWidgets.QGroupBox("接口", self)
+        layout1 = QtWidgets.QGridLayout()
+        self.checkboxes1 = self.create_checkboxes(
+            layout1, names=available_gateways
+        )  # 10 checkboxes
+        self.groupBox1.setLayout(layout1)
+
+        # Create second group box
+        self.groupBox2 = QtWidgets.QGroupBox("应用", self)
+        layout2 = QtWidgets.QGridLayout()
+        self.checkboxes2 = self.create_checkboxes(
+            layout2, names=available_apps
+        )  # 10 checkboxes
+        self.groupBox2.setLayout(layout2)
+
+        self.ok_button = QtWidgets.QPushButton("确定", self)
+        self.ok_button.clicked.connect(self.emit_checkbox_values)
+
+        # Add group boxes to the dialog's layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.groupBox1)
+        layout.addWidget(self.groupBox2)
+        layout.addWidget(self.ok_button)
+
+        self.setLayout(layout)
+
+        # Dictionary to store checkbox values
+        self.checkbox_values = self.get_checkbox_values()
+
+    def create_checkboxes(self, layout, names, num_per_row=6):
+        checkboxes = []
+        for i, name in enumerate(names):
+            checkbox = QtWidgets.QCheckBox(name, self)
+            checkbox.stateChanged.connect(self.update_checkbox_values)
+            layout.addWidget(checkbox, i // num_per_row, i % num_per_row)
+            checkboxes.append(checkbox)
+        return checkboxes
+
+    def update_checkbox_values(self):
+        self.checkbox_values = self.get_checkbox_values()
+
+    def get_checkbox_values(self):
+        return {
+            "gateways": [
+                checkbox.text() for checkbox in self.checkboxes1 if checkbox.isChecked()
+            ],
+            "apps": [
+                checkbox.text() for checkbox in self.checkboxes2 if checkbox.isChecked()
+            ],
+        }
+
+    def emit_checkbox_values(self):
+        checkbox_values = self.get_checkbox_values()
+        if checkbox_values["gateways"] or checkbox_values["apps"]:
+            self.checkbox_values_signal.emit(checkbox_values)
+            self.close()
+        else:
+            QtWidgets.QMessageBox.warning(self, "警告", "请至少选择一个接口和一个应用")
