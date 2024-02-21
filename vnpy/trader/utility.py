@@ -173,7 +173,7 @@ class BarGenerator:
     """
     For:
     1. generating 1 minute bar data from tick data
-    2. generating x minute bar/x hour bar data from 1 minute data
+    2. generating x minute bar/x hour bar data from 1-minute data
     Notice:
     1. for x minute bar, x must be able to divide 60: 2, 3, 5, 6, 10, 15, 20, 30
     2. for x hour bar, x can be any number
@@ -240,7 +240,7 @@ class BarGenerator:
                 symbol=tick.symbol,
                 exchange=tick.exchange,
                 interval=Interval.MINUTE,
-                datetime=tick.datetime,
+                datetime=tick.datetime.replace(second=0, microsecond=0),
                 gateway_name=tick.gateway_name,
                 open_price=tick.last_price,
                 high_price=tick.last_price,
@@ -251,19 +251,27 @@ class BarGenerator:
             self.pending_trade_in_current_bar = self.last_tick is not None and tick.volume == self.last_tick.volume
         else:
             self.bar.high_price = max(self.bar.high_price, tick.last_price)
-            if tick.high_price > self.last_tick.high_price:
-                self.bar.high_price = max(self.bar.high_price, tick.high_price)
+            # if tick.high_price > self.last_tick.high_price:
+            #     self.bar.high_price = max(self.bar.high_price, tick.high_price)
 
             self.bar.low_price = min(self.bar.low_price, tick.last_price)
-            if tick.low_price < self.last_tick.low_price:
-                self.bar.low_price = min(self.bar.low_price, tick.low_price)
+            # if tick.low_price < self.last_tick.low_price:
+            #     self.bar.low_price = min(self.bar.low_price, tick.low_price)
 
             self.bar.close_price = tick.last_price
             self.bar.open_interest = tick.open_interest
-            self.bar.datetime = tick.datetime
+            # self.bar.datetime = tick.datetime
+
+            # if self.window_bar:
+            #     self.window_bar.close_price = tick.last_price
+            #     self.window_bar.high_price = max(self.window_bar.high_price, tick.last_price)
+            #     self.window_bar.low_price = min(self.window_bar.low_price, tick.last_price)
+
             if self.pending_trade_in_current_bar and tick.volume > self.last_tick.volume:
                 self.pending_trade_in_current_bar = False
                 self.bar.open_price = tick.last_price
+
+        self.update_bar_minute_window(self.bar, new_minute)
 
         if self.last_tick:
             volume_change: float = tick.volume - self.last_tick.volume
@@ -285,10 +293,22 @@ class BarGenerator:
         else:
             self.update_bar_daily_window(bar)
 
-    def update_bar_minute_window(self, bar: BarData) -> None:
+    def update_bar_minute_window(self, bar: BarData, new_minute=False) -> None:
         """"""
+        if self.window_bar is None:
+            self.window_bar = BarData(
+                symbol=bar.symbol,
+                exchange=bar.exchange,
+                datetime=bar.datetime,
+                gateway_name=bar.gateway_name,
+                open_price=bar.open_price,
+                high_price=bar.high_price,
+                low_price=bar.low_price
+            )
+
         # If not inited, create window bar object
-        if not self.window_bar:
+        if (bar.datetime.hour * 60 + bar.datetime.minute) % self.window == 0 and new_minute:
+            self.on_window_bar(self.window_bar)
             dt: datetime = bar.datetime.replace(second=0, microsecond=0)
             self.window_bar = BarData(
                 symbol=bar.symbol,
@@ -317,9 +337,9 @@ class BarGenerator:
         self.window_bar.open_interest = bar.open_interest
 
         # Check if window bar completed
-        if not (bar.datetime.hour * 60 + bar.datetime.minute + 1) % self.window:
-            self.on_window_bar(self.window_bar)
-            self.window_bar = None
+        # if not (bar.datetime.hour * 60 + bar.datetime.minute + 1) % self.window:
+        #     self.on_window_bar(self.window_bar)
+        #     self.window_bar = None
 
     def update_bar_hour_window(self, bar: BarData) -> None:
         """"""
@@ -505,6 +525,7 @@ class ArrayManager(object):
         self.size: int = size
         self.inited: bool = False
 
+        self.dt_array: np.ndarray = np.zeros(size, dtype='<M8[us]')
         self.open_array: np.ndarray = np.zeros(size)
         self.high_array: np.ndarray = np.zeros(size)
         self.low_array: np.ndarray = np.zeros(size)
@@ -513,7 +534,7 @@ class ArrayManager(object):
         self.turnover_array: np.ndarray = np.zeros(size)
         self.open_interest_array: np.ndarray = np.zeros(size)
 
-    def update_bar(self, bar: BarData) -> None:
+    def update_bar(self, bar: BarData, new_bar=True) -> None:
         """
         Update new bar data into array manager.
         """
@@ -521,14 +542,17 @@ class ArrayManager(object):
         if not self.inited and self.count >= self.size:
             self.inited = True
 
-        self.open_array[:-1] = self.open_array[1:]
-        self.high_array[:-1] = self.high_array[1:]
-        self.low_array[:-1] = self.low_array[1:]
-        self.close_array[:-1] = self.close_array[1:]
-        self.volume_array[:-1] = self.volume_array[1:]
-        self.turnover_array[:-1] = self.turnover_array[1:]
-        self.open_interest_array[:-1] = self.open_interest_array[1:]
+        if new_bar:
+            self.dt_array[:-1] = self.dt_array[1:]
+            self.open_array[:-1] = self.open_array[1:]
+            self.high_array[:-1] = self.high_array[1:]
+            self.low_array[:-1] = self.low_array[1:]
+            self.close_array[:-1] = self.close_array[1:]
+            self.volume_array[:-1] = self.volume_array[1:]
+            self.turnover_array[:-1] = self.turnover_array[1:]
+            self.open_interest_array[:-1] = self.open_interest_array[1:]
 
+        self.dt_array[-1] = np.datetime64(bar.datetime.replace(tzinfo=None))
         self.open_array[-1] = bar.open_price
         self.high_array[-1] = bar.high_price
         self.low_array[-1] = bar.low_price
@@ -1044,7 +1068,7 @@ class ArrayManager(object):
 
 def virtual(func: Callable) -> Callable:
     """
-    mark a function as "virtual", which means that this function can be override.
+    mark a function as "virtual", which means that this function can be overridden.
     any base class should use this or @abstractmethod to decorate all functions
     that can be (re)implemented by subclasses.
     """
@@ -1058,7 +1082,7 @@ def _get_file_logger_handler(filename: str) -> logging.FileHandler:
     handler: logging.FileHandler = file_handlers.get(filename, None)
     if handler is None:
         handler = logging.FileHandler(filename)
-        file_handlers[filename] = handler  # Am i need a lock?
+        file_handlers[filename] = handler  # Am I need a lock?
     return handler
 
 
