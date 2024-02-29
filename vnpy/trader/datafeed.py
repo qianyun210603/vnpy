@@ -1,3 +1,4 @@
+import abc
 from abc import ABC
 from types import ModuleType
 from typing import Optional, List, Callable
@@ -18,20 +19,27 @@ class BaseDatafeed(ABC):
         """
         pass
 
-    def query_bar_history(self, req: HistoryRequest, output: Callable = print) -> Optional[List[BarData]]:
+    def query_bar_history(
+        self, req: HistoryRequest, output: Callable = print
+    ) -> Optional[List[BarData]]:  # pylint: disable=no-self-use, unused-argument
         """
         Query history bar data.
         """
         output("查询K线数据失败：没有正确配置数据服务")
+        return None
 
-    def query_tick_history(self, req: HistoryRequest, output: Callable = print) -> Optional[List[TickData]]:
+    # pylint: disable=no-self-use, unused-argument
+    def query_tick_history(
+        self, req: HistoryRequest, output: Callable = print
+    ) -> Optional[List[TickData]]:  # pylint: disable=no-self-use, unused-argument
         """
         Query history tick data.
         """
         output("查询Tick数据失败：没有正确配置数据服务")
+        return None
 
 
-datafeed: BaseDatafeed = None
+datafeed: Optional[BaseDatafeed] = None
 
 
 def get_datafeed() -> BaseDatafeed:
