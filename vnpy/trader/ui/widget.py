@@ -6,7 +6,7 @@ import csv
 from datetime import datetime
 import platform
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Type
 from copy import copy
 from tzlocal import get_localzone_name
 
@@ -75,7 +75,7 @@ class EnumCell(BaseCell):
     Cell used for showing enum data.
     """
 
-    def __init__(self, content: str, data: Any) -> None:
+    def __init__(self, content: Enum, data: Any) -> None:
         """"""
         super().__init__(content, data)
 
@@ -92,7 +92,7 @@ class DirectionCell(EnumCell):
     Cell used for showing direction data.
     """
 
-    def __init__(self, content: str, data: Any) -> None:
+    def __init__(self, content: Enum, data: Any) -> None:
         """"""
         super().__init__(content, data)
 
@@ -171,7 +171,7 @@ class TimeCell(BaseCell):
             return
 
         content: datetime = content.astimezone(self.local_tz)
-        timestamp: str = content.strftime("%H:%M:%S")
+        timestamp: str = content.strftime("%m-%d %H:%M:%S")
 
         millisecond: int = int(content.microsecond / 1000)
         if millisecond:
@@ -251,7 +251,7 @@ class BaseMonitor(QtWidgets.QTableWidget):
         self.setHorizontalHeaderLabels(labels)
 
         self.verticalHeader().setVisible(False)
-        self.setEditTriggers(self.NoEditTriggers)
+        self.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.setAlternatingRowColors(True)
         self.setSortingEnabled(self.sorting)
 
@@ -344,9 +344,7 @@ class BaseMonitor(QtWidgets.QTableWidget):
         """
         Save table data into a csv file
         """
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "保存数据", "", "CSV(*.csv)"
-        )
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "保存数据", "", "CSV(*.csv)")
 
         if not path:
             return
@@ -596,7 +594,7 @@ class ConnectDialog(QtWidgets.QDialog):
         self.gateway_name: str = gateway_name
         self.filename: str = f"connect_{gateway_name.lower()}.json"
 
-        self.widgets: Dict[str, QtWidgets.QWidget] = {}
+        self.widgets: Dict[str, Tuple[QtWidgets.QWidget, Type[QtWidgets.QWidget]]] = {}
 
         self.init_ui()
 
@@ -642,12 +640,12 @@ class ConnectDialog(QtWidgets.QDialog):
             self.widgets[field_name] = (widget, field_type)
 
         button: QtWidgets.QPushButton = QtWidgets.QPushButton("连接")
-        button.clicked.connect(self.connect)
+        button.clicked.connect(self.connect_gateway)
         form.addRow(button)
 
         self.setLayout(form)
 
-    def connect(self) -> None:
+    def connect_gateway(self) -> None:
         """
         Get setting value from line edits and connect the gateway.
         """
@@ -767,21 +765,11 @@ class TradingWidget(QtWidgets.QWidget):
         self.bp4_label: QtWidgets.QLabel = self.create_label(bid_color)
         self.bp5_label: QtWidgets.QLabel = self.create_label(bid_color)
 
-        self.bv1_label: QtWidgets.QLabel = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
-        self.bv2_label: QtWidgets.QLabel = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
-        self.bv3_label: QtWidgets.QLabel = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
-        self.bv4_label: QtWidgets.QLabel = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
-        self.bv5_label: QtWidgets.QLabel = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
+        self.bv1_label: QtWidgets.QLabel = self.create_label(bid_color, alignment=QtCore.Qt.AlignRight)
+        self.bv2_label: QtWidgets.QLabel = self.create_label(bid_color, alignment=QtCore.Qt.AlignRight)
+        self.bv3_label: QtWidgets.QLabel = self.create_label(bid_color, alignment=QtCore.Qt.AlignRight)
+        self.bv4_label: QtWidgets.QLabel = self.create_label(bid_color, alignment=QtCore.Qt.AlignRight)
+        self.bv5_label: QtWidgets.QLabel = self.create_label(bid_color, alignment=QtCore.Qt.AlignRight)
 
         self.ap1_label: QtWidgets.QLabel = self.create_label(ask_color)
         self.ap2_label: QtWidgets.QLabel = self.create_label(ask_color)
@@ -789,26 +777,14 @@ class TradingWidget(QtWidgets.QWidget):
         self.ap4_label: QtWidgets.QLabel = self.create_label(ask_color)
         self.ap5_label: QtWidgets.QLabel = self.create_label(ask_color)
 
-        self.av1_label: QtWidgets.QLabel = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
-        self.av2_label: QtWidgets.QLabel = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
-        self.av3_label: QtWidgets.QLabel = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
-        self.av4_label: QtWidgets.QLabel = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
-        self.av5_label: QtWidgets.QLabel = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
+        self.av1_label: QtWidgets.QLabel = self.create_label(ask_color, alignment=QtCore.Qt.AlignRight)
+        self.av2_label: QtWidgets.QLabel = self.create_label(ask_color, alignment=QtCore.Qt.AlignRight)
+        self.av3_label: QtWidgets.QLabel = self.create_label(ask_color, alignment=QtCore.Qt.AlignRight)
+        self.av4_label: QtWidgets.QLabel = self.create_label(ask_color, alignment=QtCore.Qt.AlignRight)
+        self.av5_label: QtWidgets.QLabel = self.create_label(ask_color, alignment=QtCore.Qt.AlignRight)
 
         self.lp_label: QtWidgets.QLabel = self.create_label()
-        self.return_label: QtWidgets.QLabel = self.create_label(
-            alignment=QtCore.Qt.AlignRight
-        )
+        self.return_label: QtWidgets.QLabel = self.create_label(alignment=QtCore.Qt.AlignRight)
 
         form: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         form.addRow(self.ap5_label, self.av5_label)
@@ -829,9 +805,8 @@ class TradingWidget(QtWidgets.QWidget):
         vbox.addLayout(form)
         self.setLayout(vbox)
 
-    def create_label(
-        self, color: str = "", alignment: int = QtCore.Qt.AlignLeft
-    ) -> QtWidgets.QLabel:
+    @staticmethod
+    def create_label(color: str = "", alignment: QtCore.Qt.Alignment = QtCore.Qt.AlignLeft) -> QtWidgets.QLabel:
         """
         Create label with certain font color.
         """
@@ -925,9 +900,7 @@ class TradingWidget(QtWidgets.QWidget):
         self.price_line.setText("")
 
         # Subscribe tick data
-        req: SubscribeRequest = SubscribeRequest(
-            symbol=symbol, exchange=Exchange(exchange_value)
-        )
+        req: SubscribeRequest = SubscribeRequest(symbol=symbol, exchange=Exchange(exchange_value))
 
         self.main_engine.subscribe(req, gateway_name)
 
@@ -1012,9 +985,7 @@ class TradingWidget(QtWidgets.QWidget):
         data = cell.get_data()
 
         self.symbol_line.setText(data.symbol)
-        self.exchange_combo.setCurrentIndex(
-            self.exchange_combo.findText(data.exchange.value)
-        )
+        self.exchange_combo.setCurrentIndex(self.exchange_combo.findText(data.exchange.value))
 
         self.set_vt_symbol()
 
@@ -1029,12 +1000,8 @@ class TradingWidget(QtWidgets.QWidget):
                 else:
                     direction: Direction = Direction.LONG
 
-            self.direction_combo.setCurrentIndex(
-                self.direction_combo.findText(direction.value)
-            )
-            self.offset_combo.setCurrentIndex(
-                self.offset_combo.findText(Offset.CLOSE.value)
-            )
+            self.direction_combo.setCurrentIndex(self.direction_combo.findText(direction.value))
+            self.offset_combo.setCurrentIndex(self.offset_combo.findText(Offset.CLOSE.value))
             self.volume_line.setText(str(abs(data.volume)))
 
 
@@ -1094,9 +1061,7 @@ class ContractManager(QtWidgets.QWidget):
         self.resize(1000, 600)
 
         self.filter_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
-        self.filter_line.setPlaceholderText(
-            "输入合约代码或者交易所，留空则查询所有合约"
-        )
+        self.filter_line.setPlaceholderText("输入合约代码或者交易所，留空则查询所有合约")
 
         self.button_show: QtWidgets.QPushButton = QtWidgets.QPushButton("查询")
         self.button_show.clicked.connect(self.show_contracts)
@@ -1131,9 +1096,7 @@ class ContractManager(QtWidgets.QWidget):
 
         all_contracts: List[ContractData] = self.main_engine.get_all_contracts()
         if flt:
-            contracts: List[ContractData] = [
-                contract for contract in all_contracts if flt in contract.vt_symbol
-            ]
+            contracts: List[ContractData] = [contract for contract in all_contracts if flt in contract.vt_symbol]
         else:
             contracts: List[ContractData] = all_contracts
 
@@ -1270,9 +1233,7 @@ class GlobalDialog(QtWidgets.QDialog):
 
             settings[field_name] = field_value
 
-        QtWidgets.QMessageBox.information(
-            self, "注意", "全局配置的修改需要重启后才会生效！", QtWidgets.QMessageBox.Ok
-        )
+        QtWidgets.QMessageBox.information(self, "注意", "全局配置的修改需要重启后才会生效！", QtWidgets.QMessageBox.Ok)
 
         save_json(SETTING_FILENAME, settings)
         self.accept()

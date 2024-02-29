@@ -44,9 +44,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_engine: MainEngine = main_engine
         self.event_engine: EventEngine = event_engine
 
-        self.window_title: str = (
-            f"VeighNa Trader 社区版 - {vnpy.__version__}   [{TRADER_DIR}]"
-        )
+        self.window_title: str = f"VeighNa Trader 社区版 - {vnpy.__version__}   [{TRADER_DIR}]"
 
         self.widgets: Dict[str, QtWidgets.QWidget] = {}
         self.monitors: Dict[str, BaseMonitor] = {}
@@ -63,30 +61,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def init_dock(self) -> None:
         """"""
-        self.trading_widget, trading_dock = self.create_dock(
-            TradingWidget, "交易", QtCore.Qt.LeftDockWidgetArea
-        )
-        tick_widget, tick_dock = self.create_dock(
-            TickMonitor, "行情", QtCore.Qt.RightDockWidgetArea
-        )
-        order_widget, order_dock = self.create_dock(
-            OrderMonitor, "委托", QtCore.Qt.RightDockWidgetArea
-        )
-        active_widget, active_dock = self.create_dock(
-            ActiveOrderMonitor, "活动", QtCore.Qt.RightDockWidgetArea
-        )
-        trade_widget, trade_dock = self.create_dock(
-            TradeMonitor, "成交", QtCore.Qt.RightDockWidgetArea
-        )
-        log_widget, log_dock = self.create_dock(
-            LogMonitor, "日志", QtCore.Qt.BottomDockWidgetArea
-        )
-        account_widget, account_dock = self.create_dock(
-            AccountMonitor, "资金", QtCore.Qt.BottomDockWidgetArea
-        )
-        position_widget, position_dock = self.create_dock(
-            PositionMonitor, "持仓", QtCore.Qt.BottomDockWidgetArea
-        )
+        self.trading_widget, trading_dock = self.create_dock(TradingWidget, "交易", QtCore.Qt.LeftDockWidgetArea)
+        tick_widget, tick_dock = self.create_dock(TickMonitor, "行情", QtCore.Qt.RightDockWidgetArea)
+        order_widget, order_dock = self.create_dock(OrderMonitor, "委托", QtCore.Qt.RightDockWidgetArea)
+        active_widget, active_dock = self.create_dock(ActiveOrderMonitor, "活动", QtCore.Qt.RightDockWidgetArea)
+        trade_widget, trade_dock = self.create_dock(TradeMonitor, "成交", QtCore.Qt.RightDockWidgetArea)
+        log_widget, log_dock = self.create_dock(LogMonitor, "日志", QtCore.Qt.BottomDockWidgetArea)
+        account_widget, account_dock = self.create_dock(AccountMonitor, "资金", QtCore.Qt.BottomDockWidgetArea)
+        position_widget, position_dock = self.create_dock(PositionMonitor, "持仓", QtCore.Qt.BottomDockWidgetArea)
 
         self.tabifyDockWidget(active_dock, order_dock)
 
@@ -106,15 +88,11 @@ class MainWindow(QtWidgets.QMainWindow):
         gateway_names: list = self.main_engine.get_all_gateway_names()
         for name in gateway_names:
             func: Callable = partial(self.connect_gateway_dialog, name)
-            self.add_action(
-                sys_menu, f"连接{name}", get_icon_path(__file__, "connect.ico"), func
-            )
+            self.add_action(sys_menu, f"连接{name}", get_icon_path(__file__, "connect.ico"), func)
 
         sys_menu.addSeparator()
 
-        self.add_action(
-            sys_menu, "退出", get_icon_path(__file__, "exit.ico"), self.close
-        )
+        self.add_action(sys_menu, "退出", get_icon_path(__file__, "exit.ico"), self.close)
 
         # App menu
         app_menu: QtWidgets.QMenu = bar.addMenu("功能")
@@ -223,7 +201,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dock: QtWidgets.QDockWidget = QtWidgets.QDockWidget(name)
         dock.setWidget(widget)
         dock.setObjectName(name)
-        dock.setFeatures(dock.DockWidgetFloatable | dock.DockWidgetMovable)
+        dock.setFeatures(QtWidgets.QDockWidget.DockWidgetFloatable | QtWidgets.QDockWidget.DockWidgetMovable)
         self.addDockWidget(area, dock)
         return widget, dock
 
