@@ -3,11 +3,12 @@ General utility functions.
 """
 
 import json
+import warnings
 import logging
 import sys
 from datetime import datetime, time
 from pathlib import Path
-from typing import Callable, Dict, Tuple, Union, Optional
+from typing import Callable, Dict, Tuple, Union, Optional, Sequence
 from decimal import Decimal
 from math import floor, ceil
 
@@ -18,12 +19,12 @@ from .object import BarData, TickData
 from .constant import Exchange, Interval
 
 if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo, available_timezones              # noqa
+    from zoneinfo import ZoneInfo, available_timezones  # noqa
 else:
-    from backports.zoneinfo import ZoneInfo, available_timezones    # noqa
+    from backports.zoneinfo import ZoneInfo, available_timezones  # noqa
 
 
-log_formatter: logging.Formatter = logging.Formatter('[%(asctime)s] %(message)s')
+log_formatter: logging.Formatter = logging.Formatter("[%(asctime)s] %(message)s")
 
 
 def extract_vt_symbol(vt_symbol: str) -> Tuple[str, Exchange]:
@@ -115,12 +116,7 @@ def save_json(filename: str, data: dict) -> None:
     """
     filepath: Path = get_file_path(filename)
     with open(filepath, mode="w+", encoding="UTF-8") as f:
-        json.dump(
-            data,
-            f,
-            indent=4,
-            ensure_ascii=False
-        )
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
 
 def round_to(value: float, target: float) -> float:
@@ -185,7 +181,8 @@ class BarGenerator:
         window: int = 0,
         on_window_bar: Callable = None,
         interval: Interval = Interval.MINUTE,
-        daily_end: time = None
+        daily_end: time = None,
+        trade_time: Sequence[Tuple[time, time]] = None,
     ) -> None:
         """Constructor"""
         self.bar: Optional[BarData] = None
@@ -201,12 +198,15 @@ class BarGenerator:
         self.window: int = window
         self.window_bar: Optional[BarData] = None
         self.on_window_bar: Callable = on_window_bar
+        self.pending_trade_in_current_windows_bar: bool = True
 
         self.last_tick: Optional[TickData] = None
 
         self.daily_end: time = daily_end
         if self.interval == Interval.DAILY and not self.daily_end:
             raise RuntimeError("合成日K线必须传入每日收盘时间")
+
+        self.trade_time: Sequence[Tuple[time, time]] = trade_time
 
     def update_tick(self, tick: TickData) -> None:
         """
@@ -222,15 +222,18 @@ class BarGenerator:
         if self.last_tick and tick.datetime < self.last_tick.datetime:
             return
 
+        tick_validate = self.validate_tick_time(tick)
+        if tick_validate != 1:
+            if tick.volume == 0 or (self.last_tick and tick.volume == self.last_tick.volume):
+                return
+            print("Tick not in trade time", tick.datetime, tick_validate)
+
         if not self.bar:
             new_minute = True
         elif (
-            (self.bar.datetime.minute != tick.datetime.minute)
-            or (self.bar.datetime.hour != tick.datetime.hour)
-        ):
-            self.bar.datetime = self.bar.datetime.replace(
-                second=0, microsecond=0
-            )
+            self.bar.datetime.minute != tick.datetime.minute or self.bar.datetime.hour != tick.datetime.hour
+        ) and tick_validate == 1:
+            self.bar.datetime = self.bar.datetime.replace(second=0, microsecond=0)
             self.on_bar(self.bar)
 
             new_minute = True
@@ -246,30 +249,22 @@ class BarGenerator:
                 high_price=tick.last_price,
                 low_price=tick.last_price,
                 close_price=tick.last_price,
-                open_interest=tick.open_interest
+                open_interest=tick.open_interest,
             )
             self.pending_trade_in_current_bar = self.last_tick is not None and tick.volume == self.last_tick.volume
         else:
             self.bar.high_price = max(self.bar.high_price, tick.last_price)
-            # if tick.high_price > self.last_tick.high_price:
-            #     self.bar.high_price = max(self.bar.high_price, tick.high_price)
 
             self.bar.low_price = min(self.bar.low_price, tick.last_price)
-            # if tick.low_price < self.last_tick.low_price:
-            #     self.bar.low_price = min(self.bar.low_price, tick.low_price)
 
             self.bar.close_price = tick.last_price
             self.bar.open_interest = tick.open_interest
-            # self.bar.datetime = tick.datetime
 
-            # if self.window_bar:
-            #     self.window_bar.close_price = tick.last_price
-            #     self.window_bar.high_price = max(self.window_bar.high_price, tick.last_price)
-            #     self.window_bar.low_price = min(self.window_bar.low_price, tick.last_price)
-
-            if self.pending_trade_in_current_bar and tick.volume > self.last_tick.volume:
+            if self.pending_trade_in_current_bar and (self.last_tick is None or tick.volume > self.last_tick.volume):
                 self.pending_trade_in_current_bar = False
                 self.bar.open_price = tick.last_price
+                self.bar.high_price = tick.last_price
+                self.bar.low_price = tick.last_price
 
         self.update_bar_minute_window(self.bar, new_minute)
 
@@ -286,6 +281,7 @@ class BarGenerator:
         """
         Update 1 minute bar into generator
         """
+        self.bar = bar
         if self.interval == Interval.MINUTE:
             self.update_bar_minute_window(bar)
         elif self.interval == Interval.HOUR:
@@ -293,7 +289,25 @@ class BarGenerator:
         else:
             self.update_bar_daily_window(bar)
 
-    def update_bar_minute_window(self, bar: BarData, new_minute=False) -> None:
+    def validate_tick_time(self, tick: TickData) -> int:
+        """
+        Validate if tick is in trade time
+        """
+        if not self.trade_time:
+            return 1
+
+        for start, end in self.trade_time:
+            if start <= tick.datetime.time() < end:
+                return 1
+            elif (
+                tick.datetime.hour == end.hour
+                and tick.datetime.minute == end.minute
+                and tick.datetime.second == end.second
+            ):
+                return 2
+        return 0
+
+    def update_bar_minute_window(self, bar: BarData, new_minute=True) -> None:
         """"""
         if self.window_bar is None:
             self.window_bar = BarData(
@@ -303,8 +317,12 @@ class BarGenerator:
                 gateway_name=bar.gateway_name,
                 open_price=bar.open_price,
                 high_price=bar.high_price,
-                low_price=bar.low_price
+                low_price=bar.low_price,
+                volume=0,
+                turnover=0,
             )
+            if bar.volume > 0:
+                self.pending_trade_in_current_windows_bar = False
 
         # If not inited, create window bar object
         if (bar.datetime.hour * 60 + bar.datetime.minute) % self.window == 0 and new_minute:
@@ -317,18 +335,22 @@ class BarGenerator:
                 gateway_name=bar.gateway_name,
                 open_price=bar.open_price,
                 high_price=bar.high_price,
-                low_price=bar.low_price
+                low_price=bar.low_price,
+                volume=0,
+                turnover=0,
             )
+            if bar.volume > 0:
+                self.pending_trade_in_current_windows_bar = False
         # Otherwise, update high/low price into window bar
         else:
-            self.window_bar.high_price = max(
-                self.window_bar.high_price,
-                bar.high_price
-            )
-            self.window_bar.low_price = min(
-                self.window_bar.low_price,
-                bar.low_price
-            )
+            if self.pending_trade_in_current_windows_bar and bar.volume > 0:
+                self.pending_trade_in_current_windows_bar = False
+                self.window_bar.open_price = bar.open_price
+                self.window_bar.high_price = bar.high_price
+                self.window_bar.low_price = bar.low_price
+            else:
+                self.window_bar.high_price = max(self.window_bar.high_price, bar.high_price)
+                self.window_bar.low_price = min(self.window_bar.low_price, bar.low_price)
 
         # Update close price/volume/turnover into window bar
         self.window_bar.close_price = bar.close_price
@@ -336,13 +358,9 @@ class BarGenerator:
         self.window_bar.turnover += bar.turnover
         self.window_bar.open_interest = bar.open_interest
 
-        # Check if window bar completed
-        # if not (bar.datetime.hour * 60 + bar.datetime.minute + 1) % self.window:
-        #     self.on_window_bar(self.window_bar)
-        #     self.window_bar = None
-
     def update_bar_hour_window(self, bar: BarData) -> None:
         """"""
+        warnings.warn("update_bar_hour_window function is not verified yet", RuntimeWarning)
         # If not inited, create window bar object
         if not self.hour_bar:
             dt: datetime = bar.datetime.replace(minute=0, second=0, microsecond=0)
@@ -357,7 +375,7 @@ class BarGenerator:
                 close_price=bar.close_price,
                 volume=bar.volume,
                 turnover=bar.turnover,
-                open_interest=bar.open_interest
+                open_interest=bar.open_interest,
             )
             return
 
@@ -365,14 +383,8 @@ class BarGenerator:
 
         # If minute is 59, update minute bar into window bar and push
         if bar.datetime.minute == 59:
-            self.hour_bar.high_price = max(
-                self.hour_bar.high_price,
-                bar.high_price
-            )
-            self.hour_bar.low_price = min(
-                self.hour_bar.low_price,
-                bar.low_price
-            )
+            self.hour_bar.high_price = max(self.hour_bar.high_price, bar.high_price)
+            self.hour_bar.low_price = min(self.hour_bar.low_price, bar.low_price)
 
             self.hour_bar.close_price = bar.close_price
             self.hour_bar.volume += bar.volume
@@ -398,18 +410,12 @@ class BarGenerator:
                 close_price=bar.close_price,
                 volume=bar.volume,
                 turnover=bar.turnover,
-                open_interest=bar.open_interest
+                open_interest=bar.open_interest,
             )
         # Otherwise only update minute bar
         else:
-            self.hour_bar.high_price = max(
-                self.hour_bar.high_price,
-                bar.high_price
-            )
-            self.hour_bar.low_price = min(
-                self.hour_bar.low_price,
-                bar.low_price
-            )
+            self.hour_bar.high_price = max(self.hour_bar.high_price, bar.high_price)
+            self.hour_bar.low_price = min(self.hour_bar.low_price, bar.low_price)
 
             self.hour_bar.close_price = bar.close_price
             self.hour_bar.volume += bar.volume
@@ -422,6 +428,7 @@ class BarGenerator:
 
     def on_hour_bar(self, bar: BarData) -> None:
         """"""
+        warnings.warn("on_hour_bar function is not verified yet", RuntimeWarning)
         if self.window == 1:
             self.on_window_bar(bar)
         else:
@@ -433,17 +440,11 @@ class BarGenerator:
                     gateway_name=bar.gateway_name,
                     open_price=bar.open_price,
                     high_price=bar.high_price,
-                    low_price=bar.low_price
+                    low_price=bar.low_price,
                 )
             else:
-                self.window_bar.high_price = max(
-                    self.window_bar.high_price,
-                    bar.high_price
-                )
-                self.window_bar.low_price = min(
-                    self.window_bar.low_price,
-                    bar.low_price
-                )
+                self.window_bar.high_price = max(self.window_bar.high_price, bar.high_price)
+                self.window_bar.low_price = min(self.window_bar.low_price, bar.low_price)
 
             self.window_bar.close_price = bar.close_price
             self.window_bar.volume += bar.volume
@@ -458,6 +459,7 @@ class BarGenerator:
 
     def update_bar_daily_window(self, bar: BarData) -> None:
         """"""
+        warnings.warn("update_bar_daily_window function is not verified yet", RuntimeWarning)
         # If not inited, create daily bar object
         if not self.daily_bar:
             self.daily_bar = BarData(
@@ -467,18 +469,12 @@ class BarGenerator:
                 gateway_name=bar.gateway_name,
                 open_price=bar.open_price,
                 high_price=bar.high_price,
-                low_price=bar.low_price
+                low_price=bar.low_price,
             )
         # Otherwise, update high/low price into daily bar
         else:
-            self.daily_bar.high_price = max(
-                self.daily_bar.high_price,
-                bar.high_price
-            )
-            self.daily_bar.low_price = min(
-                self.daily_bar.low_price,
-                bar.low_price
-            )
+            self.daily_bar.high_price = max(self.daily_bar.high_price, bar.high_price)
+            self.daily_bar.low_price = min(self.daily_bar.low_price, bar.low_price)
 
         # Update close price/volume/turnover into daily bar
         self.daily_bar.close_price = bar.close_price
@@ -488,12 +484,7 @@ class BarGenerator:
 
         # Check if daily bar completed
         if bar.datetime.time() == self.daily_end:
-            self.daily_bar.datetime = bar.datetime.replace(
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0
-            )
+            self.daily_bar.datetime = bar.datetime.replace(hour=0, minute=0, second=0, microsecond=0)
             self.on_window_bar(self.daily_bar)
 
             self.daily_bar = None
@@ -525,7 +516,7 @@ class ArrayManager(object):
         self.size: int = size
         self.inited: bool = False
 
-        self.dt_array: np.ndarray = np.zeros(size, dtype='<M8[us]')
+        self.dt_array: np.ndarray = np.zeros(size, dtype="<M8[us]")
         self.open_array: np.ndarray = np.zeros(size)
         self.high_array: np.ndarray = np.zeros(size)
         self.low_array: np.ndarray = np.zeros(size)
@@ -552,7 +543,8 @@ class ArrayManager(object):
             self.turnover_array[:-1] = self.turnover_array[1:]
             self.open_interest_array[:-1] = self.open_interest_array[1:]
 
-        self.dt_array[-1] = np.datetime64(bar.datetime.replace(tzinfo=None))
+        if bar.datetime:
+            self.dt_array[-1] = np.datetime64(bar.datetime.replace(tzinfo=None))
         self.open_array[-1] = bar.open_price
         self.high_array[-1] = bar.high_price
         self.low_array[-1] = bar.low_price
@@ -646,13 +638,7 @@ class ArrayManager(object):
             return result
         return result[-1]
 
-    def apo(
-        self,
-        fast_period: int,
-        slow_period: int,
-        matype: int = 0,
-        array: bool = False
-    ) -> Union[float, np.ndarray]:
+    def apo(self, fast_period: int, slow_period: int, matype: int = 0, array: bool = False) -> Union[float, np.ndarray]:
         """
         APO.
         """
@@ -679,13 +665,7 @@ class ArrayManager(object):
             return result
         return result[-1]
 
-    def ppo(
-        self,
-        fast_period: int,
-        slow_period: int,
-        matype: int = 0,
-        array: bool = False
-    ) -> Union[float, np.ndarray]:
+    def ppo(self, fast_period: int, slow_period: int, matype: int = 0, array: bool = False) -> Union[float, np.ndarray]:
         """
         PPO.
         """
@@ -794,21 +774,12 @@ class ArrayManager(object):
         return result[-1]
 
     def macd(
-        self,
-        fast_period: int,
-        slow_period: int,
-        signal_period: int,
-        array: bool = False
-    ) -> Union[
-        Tuple[np.ndarray, np.ndarray, np.ndarray],
-        Tuple[float, float, float]
-    ]:
+        self, fast_period: int, slow_period: int, signal_period: int, array: bool = False
+    ) -> Union[Tuple[np.ndarray, np.ndarray, np.ndarray], Tuple[float, float, float]]:
         """
         MACD.
         """
-        macd, signal, hist = talib.MACD(
-            self.close, fast_period, slow_period, signal_period
-        )
+        macd, signal, hist = talib.MACD(self.close, fast_period, slow_period, signal_period)
         if array:
             return macd, signal, hist
         return macd[-1], signal[-1], hist[-1]
@@ -868,11 +839,7 @@ class ArrayManager(object):
         return result[-1]
 
     def ultosc(
-        self,
-        time_period1: int = 7,
-        time_period2: int = 14,
-        time_period3: int = 28,
-        array: bool = False
+        self, time_period1: int = 7, time_period2: int = 14, time_period3: int = 28, array: bool = False
     ) -> Union[float, np.ndarray]:
         """
         Ultimate Oscillator.
@@ -892,14 +859,8 @@ class ArrayManager(object):
         return result[-1]
 
     def boll(
-        self,
-        n: int,
-        dev: float,
-        array: bool = False
-    ) -> Union[
-        Tuple[np.ndarray, np.ndarray],
-        Tuple[float, float]
-    ]:
+        self, n: int, dev: float, array: bool = False
+    ) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[float, float]]:
         """
         Bollinger Channel.
         """
@@ -912,14 +873,8 @@ class ArrayManager(object):
         return up, down
 
     def keltner(
-        self,
-        n: int,
-        dev: float,
-        array: bool = False
-    ) -> Union[
-        Tuple[np.ndarray, np.ndarray],
-        Tuple[float, float]
-    ]:
+        self, n: int, dev: float, array: bool = False
+    ) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[float, float]]:
         """
         Keltner Channel.
         """
@@ -931,12 +886,7 @@ class ArrayManager(object):
 
         return up, down
 
-    def donchian(
-        self, n: int, array: bool = False
-    ) -> Union[
-        Tuple[np.ndarray, np.ndarray],
-        Tuple[float, float]
-    ]:
+    def donchian(self, n: int, array: bool = False) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[float, float]]:
         """
         Donchian Channel.
         """
@@ -947,14 +897,7 @@ class ArrayManager(object):
             return up, down
         return up[-1], down[-1]
 
-    def aroon(
-        self,
-        n: int,
-        array: bool = False
-    ) -> Union[
-        Tuple[np.ndarray, np.ndarray],
-        Tuple[float, float]
-    ]:
+    def aroon(self, n: int, array: bool = False) -> Union[Tuple[np.ndarray, np.ndarray], Tuple[float, float]]:
         """
         Aroon indicator.
         """
@@ -1012,12 +955,7 @@ class ArrayManager(object):
             return result
         return result[-1]
 
-    def adosc(
-        self,
-        fast_period: int,
-        slow_period: int,
-        array: bool = False
-    ) -> Union[float, np.ndarray]:
+    def adosc(self, fast_period: int, slow_period: int, array: bool = False) -> Union[float, np.ndarray]:
         """
         ADOSC.
         """
@@ -1043,23 +981,13 @@ class ArrayManager(object):
         slowk_matype: int,
         slowd_period: int,
         slowd_matype: int,
-        array: bool = False
-    ) -> Union[
-        Tuple[float, float],
-        Tuple[np.ndarray, np.ndarray]
-    ]:
+        array: bool = False,
+    ) -> Union[Tuple[float, float], Tuple[np.ndarray, np.ndarray]]:
         """
         Stochastic Indicator
         """
         k, d = talib.STOCH(
-            self.high,
-            self.low,
-            self.close,
-            fastk_period,
-            slowk_period,
-            slowk_matype,
-            slowd_period,
-            slowd_matype
+            self.high, self.low, self.close, fastk_period, slowk_period, slowk_matype, slowd_period, slowd_matype
         )
         if array:
             return k, d
