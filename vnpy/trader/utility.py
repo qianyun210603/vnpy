@@ -253,10 +253,6 @@ class BarGenerator:
             )
             self.pending_trade_in_current_bar = self.last_tick is not None and tick.volume == self.last_tick.volume
         else:
-            self.bar.high_price = max(self.bar.high_price, tick.last_price)
-
-            self.bar.low_price = min(self.bar.low_price, tick.last_price)
-
             self.bar.close_price = tick.last_price
             self.bar.open_interest = tick.open_interest
 
@@ -265,6 +261,17 @@ class BarGenerator:
                 self.bar.open_price = tick.last_price
                 self.bar.high_price = tick.last_price
                 self.bar.low_price = tick.last_price
+            else:
+                self.bar.high_price = max(self.bar.high_price, tick.last_price)
+                self.bar.low_price = min(self.bar.low_price, tick.last_price)
+
+            # Since the CTP tick is actually 500ms sliced, sometimes within 500 ms the high/low price generated
+            # but last_price at 500ms end is not the same. So here we use the high/low recorded in tick data from CTP
+            # this doesn't cover all the cases.
+            if self.last_tick is None or self.last_tick.high_price < tick.high_price:
+                self.bar.high_price = tick.high_price
+            if self.last_tick is None or self.last_tick.low_price > tick.low_price:
+                self.bar.low_price = tick.low_price
 
         self.update_bar_minute_window(self.bar, new_minute)
 
