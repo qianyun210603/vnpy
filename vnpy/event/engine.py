@@ -18,9 +18,9 @@ class Event:
     object which contains the real data.
     """
 
-    def __init__(self, type: str, data: Any = None) -> None:
+    def __init__(self, etype: str, data: Any = None) -> None:
         """"""
-        self.type: str = type
+        self.type: str = etype
         self.data: Any = data
 
 
@@ -70,10 +70,12 @@ class EventEngine:
         to all types.
         """
         if event.type in self._handlers:
-            [handler(event) for handler in self._handlers[event.type]]
+            for handler in self._handlers[event.type]:
+                handler(event)
 
         if self._general_handlers:
-            [handler(event) for handler in self._general_handlers]
+            for handler in self._general_handlers:
+                handler(event)
 
     def _run_timer(self) -> None:
         """
@@ -106,20 +108,20 @@ class EventEngine:
         """
         self._queue.put(event)
 
-    def register(self, type: str, handler: HandlerType) -> None:
+    def register(self, etype: str, handler: HandlerType) -> None:
         """
         Register a new handler function for a specific event type. Every
         function can only be registered once for each event type.
         """
-        handler_list: list = self._handlers[type]
+        handler_list: list = self._handlers[etype]
         if handler not in handler_list:
             handler_list.append(handler)
 
-    def unregister(self, type: str, handler: HandlerType) -> None:
+    def unregister(self, etype: str, handler: HandlerType) -> None:
         """
         Unregister an existing handler function from event engine.
         """
-        handler_list: list = self._handlers[type]
+        handler_list: list = self._handlers[etype]
 
         if handler in handler_list:
             handler_list.remove(handler)
