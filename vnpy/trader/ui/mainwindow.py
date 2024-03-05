@@ -1,35 +1,22 @@
 """
 Implements main window of the trading platform.
 """
-
-from types import ModuleType
-from typing import Type
 import webbrowser
 from functools import partial
 from importlib import import_module
-from typing import Callable, Dict, List, Tuple
+from types import ModuleType
+from typing import Callable, Dict, List, Tuple, Type, Union
+
+import PySide6
 
 import vnpy
 from vnpy.event import EventEngine
 
+from ..engine import BaseApp, MainEngine
+from ..utility import TRADER_DIR, get_icon_path
 from .qt import QtCore, QtGui, QtWidgets
-from .widget import (
-    BaseMonitor,
-    TickMonitor,
-    OrderMonitor,
-    TradeMonitor,
-    PositionMonitor,
-    AccountMonitor,
-    LogMonitor,
-    ActiveOrderMonitor,
-    ConnectDialog,
-    ContractManager,
-    TradingWidget,
-    AboutDialog,
-    GlobalDialog,
-)
-from ..engine import MainEngine, BaseApp
-from ..utility import get_icon_path, TRADER_DIR
+from .widget import (AboutDialog, AccountMonitor, ActiveOrderMonitor, BaseMonitor, ConnectDialog, ContractManager,
+                     GlobalDialog, LogMonitor, OrderMonitor, PositionMonitor, TickMonitor, TradeMonitor, TradingWidget)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -189,7 +176,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toolbar.addAction(action)
 
     def create_dock(
-        self, widget_class: Type[QtWidgets.QWidget], name: str, area
+        self, widget_class, name: str, area
     ) -> Tuple[QtWidgets.QWidget, QtWidgets.QDockWidget]:
         """
         Initialize a dock widget.
@@ -239,7 +226,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             event.ignore()
 
-    def open_widget(self, widget_class: QtWidgets.QWidget, name: str) -> None:
+    def open_widget(self, widget_class, name: str) -> None:
         """
         Open contract manager.
         """
@@ -286,11 +273,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.main_engine.send_email("VeighNa Trader", "testing")
 
-    def open_forum(self) -> None:
+    @staticmethod
+    def open_forum() -> None:
         """ """
         webbrowser.open("https://www.vnpy.com/forum/")
 
+
     def edit_global_setting(self) -> None:
         """ """
-        dialog: GlobalDialog = GlobalDialog()
+        dialog: GlobalDialog = GlobalDialog(parent=self)
         dialog.exec()

@@ -1,12 +1,16 @@
 """
 Event-driven framework of VeighNa framework.
 """
-
+import logging
 from collections import defaultdict
 from queue import Empty, Queue
-from threading import Thread
+from threading import Thread, get_ident
 from time import sleep
 from typing import Any, Callable, List
+#from loguru import logger
+import logging as logger
+logging.basicConfig(level=logging.INFO)
+
 
 EVENT_TIMER = "eTimer"
 
@@ -54,6 +58,7 @@ class EventEngine:
         """
         Get event from queue and then process it.
         """
+        logger.info(f"Event engine started. Thread ID: {get_ident()}")
         while self._active:
             try:
                 event: Event = self._queue.get(block=True, timeout=1)

@@ -179,21 +179,18 @@ class BaseGateway(ABC):
         response callback/change status instead of write_log
 
         """
-        pass
 
     @abstractmethod
     def close(self) -> None:
         """
         Close gateway connection.
         """
-        pass
 
     @abstractmethod
     def subscribe(self, req: SubscribeRequest) -> None:
         """
         Subscribe tick data update.
         """
-        pass
 
     @abstractmethod
     def send_order(self, req: OrderRequest) -> str:
@@ -211,7 +208,6 @@ class BaseGateway(ABC):
 
         :return str vt_orderid for created OrderData
         """
-        pass
 
     @abstractmethod
     def cancel_order(self, req: CancelRequest) -> None:
@@ -220,7 +216,6 @@ class BaseGateway(ABC):
         implementation should finish the tasks blow:
         * send request to server
         """
-        pass
 
     def send_quote(self, req: QuoteRequest) -> str:
         """
@@ -245,27 +240,23 @@ class BaseGateway(ABC):
         implementation should finish the tasks blow:
         * send request to server
         """
-        pass
 
     @abstractmethod
     def query_account(self) -> None:
         """
         Query account balance.
         """
-        pass
 
     @abstractmethod
     def query_position(self) -> None:
         """
         Query holding positions.
         """
-        pass
 
     def query_history(self, req: HistoryRequest) -> List[BarData]:
         """
         Query bar history data.
         """
-        pass
 
     def get_default_setting(self) -> Dict[str, Any]:
         """

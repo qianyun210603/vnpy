@@ -258,7 +258,6 @@ class BaseEngine(ABC):
 
     def close(self) -> None:
         """"""
-        pass
 
 
 class LogEngine(BaseEngine):

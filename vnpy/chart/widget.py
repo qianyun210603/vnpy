@@ -378,7 +378,7 @@ class ChartCursor(QtCore.QObject):
         self._x_label.hide()
         self._x_label.setZValue(2)
         self._x_label.setFont(NORMAL_FONT)
-        plot.addItem(self._x_label, ignoreBounds=True)
+        plot.addItem(self._x_label, ignoreBounds=True)  # pylint: disable=W0631
 
     def _init_info(self) -> None:
         """

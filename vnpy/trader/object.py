@@ -3,13 +3,13 @@ Basic data structure used for general trading function in the trading platform.
 """
 
 import numpy as np
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass, field, asdict
+from datetime import datetime as datetimetype
 from logging import INFO
 
 from .constant import Direction, Exchange, Interval, Offset, Status, Product, OptionType, OrderType
 
-ACTIVE_STATUSES = set([Status.SUBMITTING, Status.NOTTRADED, Status.PARTTRADED])
+ACTIVE_STATUSES = {Status.SUBMITTING, Status.NOTTRADED, Status.PARTTRADED}
 
 
 @dataclass
@@ -23,6 +23,9 @@ class BaseData:
 
     extra: dict = field(default=None, init=False)
 
+    def __str__(self):
+        return str(asdict(self))
+
 
 @dataclass
 class TickData(BaseData):
@@ -35,7 +38,7 @@ class TickData(BaseData):
 
     symbol: str
     exchange: Exchange
-    datetime: datetime
+    datetime: datetimetype
 
     name: str = ""
     volume: float = 0
@@ -75,7 +78,7 @@ class TickData(BaseData):
     ask_volume_4: float = 0
     ask_volume_5: float = 0
 
-    localtime: datetime = None
+    localtime: datetimetype = None
 
     def __post_init__(self) -> None:
         """"""
@@ -90,7 +93,7 @@ class BarData(BaseData):
 
     symbol: str
     exchange: Exchange
-    datetime: datetime
+    datetime: datetimetype
 
     interval: Interval = None
     volume: float = 0
@@ -124,7 +127,7 @@ class OrderData(BaseData):
     volume: float = 0
     traded: float = 0
     status: Status = Status.SUBMITTING
-    datetime: datetime = None
+    datetime: datetimetype = None
     reference: str = ""
 
     def __post_init__(self) -> None:
@@ -162,7 +165,7 @@ class TradeData(BaseData):
     offset: Offset = Offset.NONE
     price: float = 0
     volume: float = 0
-    datetime: datetime = None
+    datetime: datetimetype = None
 
     def __post_init__(self) -> None:
         """"""
@@ -222,7 +225,7 @@ class LogData(BaseData):
 
     def __post_init__(self) -> None:
         """"""
-        self.time: datetime = datetime.now()
+        self.time: datetimetype = datetimetype.now()
 
 
 @dataclass
@@ -246,8 +249,8 @@ class ContractData(BaseData):
     option_strike: float = 0
     option_underlying: str = ""  # vt_symbol of underlying contract
     option_type: OptionType = None
-    option_listed: datetime = None
-    option_expiry: datetime = None
+    option_listed: datetimetype = None
+    option_expiry: datetimetype = None
     option_portfolio: str = ""
     option_index: str = ""  # for identifying options with same strike price
 
@@ -274,7 +277,7 @@ class QuoteData(BaseData):
     bid_offset: Offset = Offset.NONE
     ask_offset: Offset = Offset.NONE
     status: Status = Status.SUBMITTING
-    datetime: datetime = None
+    datetime: datetimetype = None
     reference: str = ""
 
     def __post_init__(self) -> None:
@@ -371,8 +374,8 @@ class HistoryRequest:
 
     symbol: str
     exchange: Exchange
-    start: datetime
-    end: datetime = None
+    start: datetimetype
+    end: datetimetype = None
     interval: Interval = None
 
     def __post_init__(self) -> None:

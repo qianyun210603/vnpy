@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 import pyqtgraph as pg
 
@@ -19,8 +19,8 @@ class ChartItem(pg.GraphicsObject):
 
         self._manager: BarManager = manager
 
-        self._bar_picutures: Dict[int, QtGui.QPicture] = {}
-        self._item_picuture: QtGui.QPicture = None
+        self._bar_picutures: Dict[int, Optional[QtGui.QPicture]] = {}
+        self._item_picuture: Optional[QtGui.QPicture] = None
 
         self._black_brush: QtGui.QBrush = pg.mkBrush(color=BLACK_COLOR)
 
@@ -34,7 +34,7 @@ class ChartItem(pg.GraphicsObject):
         )
         self._down_brush: QtGui.QBrush = pg.mkBrush(color=DOWN_COLOR)
 
-        self._rect_area: Tuple[float, float] = None
+        self._rect_area: Optional[Tuple[float, float]] = None
 
         # Very important! Only redraw the visible part and improve speed a lot.
         self.setFlag(self.ItemUsesExtendedStyleOption)
@@ -47,14 +47,12 @@ class ChartItem(pg.GraphicsObject):
         """
         Draw picture for specific bar.
         """
-        pass
 
     @abstractmethod
     def boundingRect(self) -> QtCore.QRectF:
         """
         Get bounding rectangles for item.
         """
-        pass
 
     @abstractmethod
     def get_y_range(self, min_ix: int = None, max_ix: int = None) -> Tuple[float, float]:
@@ -63,14 +61,12 @@ class ChartItem(pg.GraphicsObject):
 
         If min_ix and max_ix not specified, then return range with whole data set.
         """
-        pass
 
     @abstractmethod
     def get_info_text(self, ix: int) -> str:
         """
         Get information text to show by cursor.
         """
-        pass
 
     def update_history(self, history: List[BarData]) -> None:
         """
@@ -161,10 +157,6 @@ class ChartItem(pg.GraphicsObject):
 
 class CandleItem(ChartItem):
     """"""
-
-    def __init__(self, manager: BarManager) -> None:
-        """"""
-        super().__init__(manager)
 
     def _draw_bar_picture(self, ix: int, bar: BarData) -> QtGui.QPicture:
         """"""
@@ -261,10 +253,6 @@ class CandleItem(ChartItem):
 
 class VolumeItem(ChartItem):
     """"""
-
-    def __init__(self, manager: BarManager) -> None:
-        """"""
-        super().__init__(manager)
 
     def _draw_bar_picture(self, ix: int, bar: BarData) -> QtGui.QPicture:
         """"""

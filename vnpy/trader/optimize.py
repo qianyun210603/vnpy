@@ -1,4 +1,4 @@
-from typing import Dict, List, Callable, Tuple
+from typing import Dict, List, Callable, Tuple, Sequence
 from itertools import product
 from concurrent.futures import ProcessPoolExecutor
 from random import random, choice
@@ -18,7 +18,7 @@ KEY_FUNC = Callable[[list], float]
 
 # Create individual class used in genetic algorithm optimization
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-creator.create("Individual", list, fitness=creator.FitnessMax)
+creator.create("Individual", list, fitness=creator.FitnessMax)  # pylint: disable=no-member
 
 
 class OptimizationSetting:
@@ -107,7 +107,7 @@ def run_bf_optimization(
     output("开始执行穷举算法优化")
     output(f"参数优化空间：{len(settings)}")
 
-    start: int = perf_counter()
+    start: float = perf_counter()
 
     with ProcessPoolExecutor(
         max_workers,
@@ -117,10 +117,10 @@ def run_bf_optimization(
             executor.map(evaluate_func, settings),
             total=len(settings)
         )
-        results: List[Tuple] = list(it)
+        results = list(it)
         results.sort(reverse=True, key=key_func)
 
-        end: int = perf_counter()
+        end: float = perf_counter()
         cost: int = int((end - start))
         output(f"穷举算法优化完成，耗时{cost}秒")
 
@@ -139,31 +139,31 @@ def run_ga_optimization(
     """Run genetic algorithm optimization"""
     # Define functions for generate parameter randomly
     buf: List[Dict] = optimization_setting.generate_settings()
-    settings: List[Tuple] = [list(d.items()) for d in buf]
+    settings: List[Tuple] = [tuple(d.items()) for d in buf]
 
-    def generate_parameter() -> list:
+    def generate_parameter() -> Sequence:
         """"""
         return choice(settings)
 
     def mutate_individual(individual: list, indpb: float) -> tuple:
         """"""
         size: int = len(individual)
-        paramlist: list = generate_parameter()
+        paramlist: Sequence = generate_parameter()
         for i in range(size):
             if random() < indpb:
                 individual[i] = paramlist[i]
-        return individual,
+        return (individual,)
 
     # Set up multiprocessing Pool and Manager
     ctx: BaseContext = get_context("spawn")
     with ctx.Manager() as manager, ctx.Pool(max_workers) as pool:
         # Create shared dict for result cache
-        cache: Dict[Tuple, Tuple] = manager.dict()
+        cache = manager.dict()
 
         # Set up toolbox
         toolbox: base.Toolbox = base.Toolbox()
-        toolbox.register("individual", tools.initIterate, creator.Individual, generate_parameter)
-        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+        toolbox.register("individual", tools.initIterate, creator.Individual, generate_parameter)  # pylint: disable=no-member
+        toolbox.register("population", tools.initRepeat, list, toolbox.individual)  # pylint: disable=no-member
         toolbox.register("mate", tools.cxTwoPoint)
         toolbox.register("mutate", mutate_individual, indpb=1)
         toolbox.register("select", tools.selNSGA2)
@@ -185,7 +185,7 @@ def run_ga_optimization(
         mutpb: float = 1 - cxpb    # probability that an offspring is produced by mutation
         ngen: int = ngen_size    # number of generation
 
-        pop: list = toolbox.population(pop_size)
+        pop: list = toolbox.population(pop_size)  # pylint: disable=no-member
 
         # Run ga optimization
         output("开始执行遗传算法优化")
@@ -196,7 +196,7 @@ def run_ga_optimization(
         output(f"交叉概率：{cxpb:.0%}")
         output(f"突变概率：{mutpb:.0%}")
 
-        start: int = perf_counter()
+        start: float = perf_counter()
 
         algorithms.eaMuPlusLambda(
             pop,
@@ -209,7 +209,7 @@ def run_ga_optimization(
             verbose=True
         )
 
-        end: int = perf_counter()
+        end: float = perf_counter()
         cost: int = int((end - start))
 
         output(f"遗传算法优化完成，耗时{cost}秒")
@@ -224,7 +224,7 @@ def ga_evaluate(
     evaluate_func: callable,
     key_func: callable,
     parameters: list
-) -> float:
+) -> Tuple[float]:
     """
     Functions to be run in genetic algorithm optimization.
     """

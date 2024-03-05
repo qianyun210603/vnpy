@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from types import ModuleType
-from typing import List
+from typing import List, Optional
 from dataclasses import dataclass
 from importlib import import_module
 
@@ -59,14 +59,12 @@ class BaseDatabase(ABC):
         """
         Save bar data into database.
         """
-        pass
 
     @abstractmethod
     def save_tick_data(self, ticks: List[TickData], stream: bool = False) -> bool:
         """
         Save tick data into database.
         """
-        pass
 
     @abstractmethod
     def load_bar_data(
@@ -80,7 +78,6 @@ class BaseDatabase(ABC):
         """
         Load bar data from database.
         """
-        pass
 
     @abstractmethod
     def load_tick_data(
@@ -93,7 +90,6 @@ class BaseDatabase(ABC):
         """
         Load tick data from database.
         """
-        pass
 
     @abstractmethod
     def delete_bar_data(
@@ -105,7 +101,6 @@ class BaseDatabase(ABC):
         """
         Delete all bar data with given symbol + exchange + interval.
         """
-        pass
 
     @abstractmethod
     def delete_tick_data(
@@ -116,30 +111,27 @@ class BaseDatabase(ABC):
         """
         Delete all tick data with given symbol + exchange.
         """
-        pass
 
     @abstractmethod
     def get_bar_overview(self) -> List[BarOverview]:
         """
         Return bar data avaible in database.
         """
-        pass
 
     @abstractmethod
     def get_tick_overview(self) -> List[TickOverview]:
         """
         Return tick data avaible in database.
         """
-        pass
 
 
-database: BaseDatabase = None
+database: Optional[BaseDatabase] = None
 
 
 def get_database() -> BaseDatabase:
     """"""
     # Return database object if already inited
-    global database
+    global database  # pylint: disable=global-statement
     if database:
         return database
 

@@ -46,6 +46,9 @@ class Status(Enum):
     CANCELLED = "已撤销"
     REJECTED = "拒单"
 
+    def is_active(self):
+        return self in [Status.SUBMITTING, Status.NOTTRADED, Status.PARTTRADED]
+
 
 class Product(Enum):
     """

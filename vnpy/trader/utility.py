@@ -5,12 +5,14 @@ General utility functions.
 import json
 import warnings
 import logging
+import keyring
 import sys
 from datetime import datetime, time
 from pathlib import Path
 from typing import Callable, Dict, Tuple, Union, Optional, Sequence
 from decimal import Decimal
 from math import floor, ceil
+from cryptography.fernet import Fernet
 
 import numpy as np
 import talib
@@ -19,12 +21,41 @@ from .object import BarData, TickData
 from .constant import Exchange, Interval
 
 if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo, available_timezones  # noqa
+    from zoneinfo import ZoneInfo  # noqa # pylint: disable=unused-import,no-name-in-module
 else:
-    from backports.zoneinfo import ZoneInfo, available_timezones  # noqa
+    from backports.zoneinfo import ZoneInfo  # noqa # pylint: disable=unused-import,no-name-in-module
+
+logger = logging.getLogger(__name__)
+# Set the log level
+logger.setLevel(logging.INFO)
 
 
-log_formatter: logging.Formatter = logging.Formatter("[%(asctime)s] %(message)s")
+class Encryptor:
+    """
+    Encrypt and decrypt string.
+    """
+
+    def __init__(self) -> None:
+        key = keyring.get_password("vn.trader", "encrypt_key")
+        if not key:
+            key = Fernet.generate_key().decode()
+            keyring.set_password("vn.trader", "encrypt_key", key)
+        self.cipher_suite: Fernet = Fernet(key)
+
+    def encrypt(self, text: str) -> str:
+        """
+        Encrypt a string.
+        """
+        return self.cipher_suite.encrypt(text.encode("utf-8")).decode("utf-8")
+
+    def decrypt(self, encrypted_text: str) -> str:
+        """
+        Decrypt a string.
+        """
+        return self.cipher_suite.decrypt(encrypted_text.encode("utf-8")).decode("utf-8")
+
+
+encryptor: Encryptor = Encryptor()
 
 
 def extract_vt_symbol(vt_symbol: str) -> Tuple[str, Exchange]:
@@ -84,6 +115,12 @@ def get_folder_path(folder_name: str) -> Path:
     if not folder_path.exists():
         folder_path.mkdir()
     return folder_path
+
+
+# Create a file handler
+handler = logging.FileHandler(get_folder_path("log").joinpath(f"{__name__}.log"), mode="a")
+formatter = logging.Formatter("[%(process)s:%(threadName)s](%(asctime)s) %(levelname)s - %(name)s - [%(filename)s:%(lineno)d] - %(message)s")
+handler.setFormatter(formatter)
 
 
 def get_icon_path(filepath: str, ico_name: str) -> str:
@@ -222,7 +259,7 @@ class BarGenerator:
         if self.last_tick and tick.datetime < self.last_tick.datetime:
             return
 
-        tick_validate = self.validate_tick_time(tick)
+        tick_validate = self.validate_tick_time(tick.datetime)
         if tick_validate != 1:
             if tick.volume == 0 or (self.last_tick and tick.volume == self.last_tick.volume):
                 return
@@ -296,7 +333,7 @@ class BarGenerator:
         else:
             self.update_bar_daily_window(bar)
 
-    def validate_tick_time(self, tick: TickData) -> int:
+    def validate_tick_time(self, tick_time: datetime) -> int:
         """
         Validate if tick is in trade time
         """
@@ -304,13 +341,9 @@ class BarGenerator:
             return 1
 
         for start, end in self.trade_time:
-            if start <= tick.datetime.time() < end:
+            if start <= tick_time.time() < end:
                 return 1
-            elif (
-                tick.datetime.hour == end.hour
-                and tick.datetime.minute == end.minute
-                and tick.datetime.second == end.second
-            ):
+            elif tick_time.hour == end.hour and tick_time.minute == end.minute and tick_time.second == end.second:
                 return 2
         return 0
 
@@ -510,7 +543,7 @@ class BarGenerator:
         return bar
 
 
-class ArrayManager(object):
+class ArrayManager:
     """
     For:
     1. time series container of bar data
