@@ -6,5 +6,3 @@
 
 from vnpy.trader.utility import ArrayManager, BarGenerator, BarData
 import pickle
-
-
