@@ -7,12 +7,20 @@ from queue import Empty, Queue
 from threading import Thread, get_ident
 from time import sleep
 from typing import Any, Callable, List
-#from loguru import logger
-import logging as logger
-logging.basicConfig(level=logging.INFO)
-
+from vnpy.trader.utility import get_folder_path
 
 EVENT_TIMER = "eTimer"
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+    # Create a file handler
+    handler = logging.FileHandler(get_folder_path("log").joinpath(f"{__name__}.log"), mode="a")
+    formatter = logging.Formatter("[%(process)s:%(threadName)s](%(asctime)s) %(levelname)s - %(name)s - [%(filename)s:%(lineno)d] - %(message)s")
+    handler.setFormatter(formatter)
+
+    # Add the handler to the logger
+    logger.addHandler(handler)
 
 
 class Event:

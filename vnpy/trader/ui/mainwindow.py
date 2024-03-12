@@ -5,7 +5,7 @@ import webbrowser
 from functools import partial
 from importlib import import_module
 from types import ModuleType
-from typing import Callable, Dict, List, Tuple, Type, Union
+from typing import Callable, Dict, List, Tuple, Union
 
 import PySide6
 

@@ -26,8 +26,7 @@ else:
     from backports.zoneinfo import ZoneInfo  # noqa # pylint: disable=unused-import,no-name-in-module
 
 logger = logging.getLogger(__name__)
-# Set the log level
-logger.setLevel(logging.INFO)
+
 
 
 class Encryptor:
@@ -118,9 +117,12 @@ def get_folder_path(folder_name: str) -> Path:
 
 
 # Create a file handler
-handler = logging.FileHandler(get_folder_path("log").joinpath(f"{__name__}.log"), mode="a")
-formatter = logging.Formatter("[%(process)s:%(threadName)s](%(asctime)s) %(levelname)s - %(name)s - [%(filename)s:%(lineno)d] - %(message)s")
-handler.setFormatter(formatter)
+if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+    handler = logging.FileHandler(get_folder_path("log").joinpath(f"{__name__}.log"), mode="a")
+    formatter = logging.Formatter("[%(process)s:%(threadName)s](%(asctime)s) %(levelname)s - %(name)s - [%(filename)s:%(lineno)d] - %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
 
 
 def get_icon_path(filepath: str, ico_name: str) -> str:
@@ -260,10 +262,8 @@ class BarGenerator:
             return
 
         tick_validate = self.validate_tick_time(tick.datetime)
-        if tick_validate != 1:
-            if tick.volume == 0 or (self.last_tick and tick.volume == self.last_tick.volume):
-                return
-            print("Tick not in trade time", tick.datetime, tick_validate)
+        if tick_validate < 1 or tick_validate == 2 and (self.last_tick and tick.volume == self.last_tick.volume):
+            return
 
         if not self.bar:
             new_minute = True
@@ -337,14 +337,21 @@ class BarGenerator:
         """
         Validate if tick is in trade time
         """
+        now_time = datetime.now(tz=ZoneInfo("Asia/Shanghai"))
+
+        if abs((now_time - tick_time).total_seconds()) > 60:
+            logger.info(f"Tick timestamp too far from now: {now_time.isoformat()}, tick time: {tick_time.isoformat()}")
+            return -1
         if not self.trade_time:
+            logger.warning("No trading timerange provided!!!")
             return 1
 
         for start, end in self.trade_time:
             if start <= tick_time.time() < end:
                 return 1
-            elif tick_time.hour == end.hour and tick_time.minute == end.minute and tick_time.second == end.second:
+            elif tick_time.hour == end.hour and tick_time.minute == end.minute and tick_time.second == end.second and tick_time.microsecond == end.microsecond:
                 return 2
+        logger.info(f"Tick not in trade time: {tick_time.isoformat()}")
         return 0
 
     def update_bar_minute_window(self, bar: BarData, new_minute=True) -> None:
@@ -569,11 +576,14 @@ class ArrayManager:
         """
         Update new bar data into array manager.
         """
+        if not bar or not bar.datetime:
+            return
         self.count += 1
         if not self.inited and self.count >= self.size:
             self.inited = True
 
-        if new_bar:
+        bar_dt = np.datetime64(bar.datetime.replace(tzinfo=None))
+        if bar_dt != self.dt_array[-1]:
             self.dt_array[:-1] = self.dt_array[1:]
             self.open_array[:-1] = self.open_array[1:]
             self.high_array[:-1] = self.high_array[1:]
@@ -583,8 +593,7 @@ class ArrayManager:
             self.turnover_array[:-1] = self.turnover_array[1:]
             self.open_interest_array[:-1] = self.open_interest_array[1:]
 
-        if bar.datetime:
-            self.dt_array[-1] = np.datetime64(bar.datetime.replace(tzinfo=None))
+        self.dt_array[-1] = bar_dt
         self.open_array[-1] = bar.open_price
         self.high_array[-1] = bar.high_price
         self.low_array[-1] = bar.low_price
@@ -1054,12 +1063,14 @@ def _get_file_logger_handler(filename: str) -> logging.FileHandler:
     return handler
 
 
-def get_file_logger(filename: str) -> logging.Logger:
+def get_file_logger(filename: str, logformat_str: str = None) -> logging.Logger:
     """
     return a logger that writes records into a file.
     """
     logger: logging.Logger = logging.getLogger(filename)
     handler: logging.FileHandler = _get_file_logger_handler(filename)  # get singleton handler.
-    handler.setFormatter(log_formatter)
+    if logformat_str:
+        log_formatter = logging.Formatter(logformat_str)
+        handler.setFormatter(log_formatter)
     logger.addHandler(handler)  # each handler will be added only once.
     return logger

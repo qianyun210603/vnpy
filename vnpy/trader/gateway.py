@@ -54,7 +54,7 @@ class BaseGateway(ABC):
     all @abstractmethod
 
     ---
-    ## callbacks must response manually:
+    ## callbacks must respond manually:
     * on_tick
     * on_trade
     * on_order

@@ -109,7 +109,6 @@ class CellStylerNumeric(CellStyler):
 
         return cell
 
-
 class CellStylerConditional(CellStyler):
     """
     Text cell style with conditional text color.
