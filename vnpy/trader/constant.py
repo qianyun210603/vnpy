@@ -5,7 +5,13 @@ General constant enums used in the trading platform.
 from enum import Enum
 
 
-class Direction(Enum):
+class VNBaseEnum(Enum):
+
+    def __str__(self):
+        return self.value
+
+
+class Direction(VNBaseEnum):
     """
     Direction of order/trade/position.
     """
@@ -22,7 +28,7 @@ class Direction(Enum):
         return Direction.NET
 
 
-class Offset(Enum):
+class Offset(VNBaseEnum):
     """
     Offset of order/trade.
     """
@@ -34,7 +40,7 @@ class Offset(Enum):
     CLOSEYESTERDAY = "平昨"
 
 
-class Status(Enum):
+class Status(VNBaseEnum):
     """
     Order status.
     """
@@ -50,7 +56,7 @@ class Status(Enum):
         return self in [Status.SUBMITTING, Status.NOTTRADED, Status.PARTTRADED]
 
 
-class Product(Enum):
+class Product(VNBaseEnum):
     """
     Product class.
     """
@@ -68,7 +74,7 @@ class Product(Enum):
     FUND = "基金"
 
 
-class OrderType(Enum):
+class OrderType(VNBaseEnum):
     """
     Order type.
     """
@@ -81,7 +87,7 @@ class OrderType(Enum):
     RFQ = "询价"
 
 
-class OptionType(Enum):
+class OptionType(VNBaseEnum):
     """
     Option type.
     """
@@ -90,7 +96,7 @@ class OptionType(Enum):
     PUT = "看跌期权"
 
 
-class Exchange(Enum):
+class Exchange(VNBaseEnum):
     """
     Exchange.
     """
@@ -154,7 +160,7 @@ class Exchange(Enum):
     LOCAL = "LOCAL"  # For local generated data
 
 
-class Currency(Enum):
+class Currency(VNBaseEnum):
     """
     Currency.
     """
@@ -166,7 +172,7 @@ class Currency(Enum):
     EUR = "EUR"
 
 
-class Interval(Enum):
+class Interval(VNBaseEnum):
     """
     Interval of bar data.
     """

@@ -69,8 +69,6 @@ def generate_vt_symbol(symbol: str, exchange: Exchange) -> str:
     return f"{symbol}.{exchange.value}"
 
 
-
-
 def get_icon_path(filepath: str, ico_name: str) -> str:
     """
     Get path for icon file with ico name.
@@ -200,6 +198,7 @@ def get_plain_log_file(filename) -> Path:
     """
     filename = filename if filename.endswith(".log") else f"{filename}.log"
     from .setting import SETTINGS  # pylint: disable=import-outside-toplevel
+
     if SETTINGS.get("log.path", "") != "":
         log_path = Path(SETTINGS["log.path"])
         log_path.mkdir(exist_ok=True, parents=True)
@@ -207,8 +206,13 @@ def get_plain_log_file(filename) -> Path:
     return get_folder_path("log").joinpath(filename)
 
 
-def setup_plain_logger(logger_name: str, logger_level: int, logger_filename: str = None, stream: bool = False,
-                       formatter_str: str = "[%(process)s:%(threadName)s](%(asctime)s) %(levelname)s - %(name)s - [%(filename)s:%(lineno)d] - %(message)s") -> logging.Logger:
+def setup_plain_logger(
+    logger_name: str,
+    logger_level: int,
+    logger_filename: str = None,
+    stream: bool = False,
+    formatter_str: str = "[%(process)s:%(threadName)s](%(asctime)s) %(levelname)s - %(name)s - [%(filename)s:%(lineno)d] - %(message)s",
+) -> logging.Logger:
     """
     Setup plain logger to file.
     """
@@ -389,7 +393,12 @@ class BarGenerator:
         for start, end in self.trade_time:
             if start <= tick_time.time() < end:
                 return 1
-            elif tick_time.hour == end.hour and tick_time.minute == end.minute and tick_time.second == end.second and tick_time.microsecond == end.microsecond:
+            elif (
+                tick_time.hour == end.hour
+                and tick_time.minute == end.minute
+                and tick_time.second == end.second
+                and tick_time.microsecond == end.microsecond
+            ):
                 return 2
         logger.debug(f"Tick not in trade time: {tick_time.isoformat()}")
         return 0
@@ -612,7 +621,7 @@ class ArrayManager:
         self.turnover_array: np.ndarray = np.zeros(size)
         self.open_interest_array: np.ndarray = np.zeros(size)
 
-    def update_bar(self, bar: BarData, new_bar=True) -> None:
+    def update_bar(self, bar: BarData) -> None:
         """
         Update new bar data into array manager.
         """

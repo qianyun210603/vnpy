@@ -24,7 +24,7 @@ class BaseData:
     extra: dict = field(default=None, init=False)
 
     def __str__(self):
-        return str(asdict(self))
+        return f"{self.__class__.__name__}({','.join([f'{k}:{v}' for k, v in asdict(self).items()])})"
 
 
 @dataclass
@@ -83,6 +83,15 @@ class TickData(BaseData):
     def __post_init__(self) -> None:
         """"""
         self.vt_symbol: str = f"{self.symbol}.{self.exchange.value}"
+
+    def __str__(self):
+        return (
+            f"Tick@{self.datetime.isoformat()}: bid:{self.bid_price_1}({self.bid_volume_1}) "
+            f"ask:{self.ask_price_1}({self.ask_volume_1}) last:{self.last_price}({self.last_volume})"
+        )
+
+    def fullstr(self) -> str:
+        return super().__str__()
 
 
 @dataclass
@@ -148,6 +157,12 @@ class OrderData(BaseData):
         req: CancelRequest = CancelRequest(orderid=self.orderid, symbol=self.symbol, exchange=self.exchange)
         return req
 
+    def __str__(self):
+        return (
+            f"Order@{self.datetime.isoformat()}: {self.direction} {self.offset} {self.volume}@{self.price} "
+            f"traded:{self.traded} status:{self.status}"
+        )
+
 
 @dataclass
 class TradeData(BaseData):
@@ -172,6 +187,9 @@ class TradeData(BaseData):
         self.vt_symbol: str = f"{self.symbol}.{self.exchange.value}"
         self.vt_orderid: str = f"{self.gateway_name}.{self.orderid}"
         self.vt_tradeid: str = f"{self.gateway_name}.{self.tradeid}"
+
+    def __str__(self):
+        return f"Trade@{self.datetime.isoformat()}: {self.direction} {self.offset} {self.volume}@{self.price}"
 
 
 @dataclass

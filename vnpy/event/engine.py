@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 from queue import Empty, Queue
 from threading import Thread, get_ident
-from time import sleep, time_ns
+from time import sleep
 from typing import Any, Callable, List
 from ..trader.object import TickData
 from ..trader.utility import setup_plain_logger
