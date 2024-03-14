@@ -268,6 +268,8 @@ class BaseMonitor(QtWidgets.QTableWidget):
 
         # Update data into table.
         data = event.data
+        if not data:
+            return
 
         if not self.data_key:
             self.insert_new_row(data)

@@ -272,7 +272,7 @@ class LogEngine(BaseEngine):
         if not SETTINGS["log.active"]:
             return
 
-        self.level: int = SETTINGS["log.level"]
+        self.level: int = SETTINGS["log.level"] if isinstance(SETTINGS["log.level"], int) else getattr(logging, SETTINGS["log.level"], logging.CRITICAL)
 
         self.logger: Logger = logging.getLogger("veighna")
         self.logger.setLevel(self.level)
@@ -313,7 +313,8 @@ class LogEngine(BaseEngine):
         """
         today_date: str = datetime.now().strftime("%Y%m%d")
         filename: str = f"vt_{today_date}.log"
-        log_path: Path = get_folder_path("log")
+        log_path: Path = get_folder_path("log") if SETTINGS.get("log.path", "") == "" else Path(SETTINGS["log.path"])
+        log_path.mkdir(parents=True, exist_ok=True)
         file_path: Path = log_path.joinpath(filename)
 
         file_handler: logging.FileHandler = logging.FileHandler(
@@ -439,7 +440,8 @@ class OmsEngine(BaseEngine):
     def process_account_event(self, event: Event) -> None:
         """"""
         account: AccountData = event.data
-        self.accounts[account.vt_accountid] = account
+        if account is not None:
+            self.accounts[account.vt_accountid] = account
 
     def process_contract_event(self, event: Event) -> None:
         """"""

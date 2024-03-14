@@ -25,9 +25,6 @@ if sys.version_info >= (3, 9):
 else:
     from backports.zoneinfo import ZoneInfo  # noqa # pylint: disable=unused-import,no-name-in-module
 
-logger = logging.getLogger(__name__)
-
-
 
 class Encryptor:
     """
@@ -71,57 +68,6 @@ def generate_vt_symbol(symbol: str, exchange: Exchange) -> str:
     """
     return f"{symbol}.{exchange.value}"
 
-
-def _get_trader_dir(temp_name: str) -> Tuple[Path, Path]:
-    """
-    Get path where trader is running in.
-    """
-    cwd: Path = Path.cwd()
-    temp_path: Path = cwd.joinpath(temp_name)
-
-    # If .vntrader folder exists in current working directory,
-    # then use it as trader running path.
-    if temp_path.exists():
-        return cwd, temp_path
-
-    # Otherwise use home path of system.
-    home_path: Path = Path.home()
-    temp_path: Path = home_path.joinpath(temp_name)
-
-    # Create .vntrader folder under home path if not exist.
-    if not temp_path.exists():
-        temp_path.mkdir()
-
-    return home_path, temp_path
-
-
-TRADER_DIR, TEMP_DIR = _get_trader_dir(".vntrader")
-sys.path.append(str(TRADER_DIR))
-
-
-def get_file_path(filename: str) -> Path:
-    """
-    Get path for temp file with filename.
-    """
-    return TEMP_DIR.joinpath(filename)
-
-
-def get_folder_path(folder_name: str) -> Path:
-    """
-    Get path for temp folder with folder name.
-    """
-    folder_path: Path = TEMP_DIR.joinpath(folder_name)
-    if not folder_path.exists():
-        folder_path.mkdir()
-    return folder_path
-
-
-# Create a file handler
-if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
-    handler = logging.FileHandler(get_folder_path("log").joinpath(f"{__name__}.log"), mode="a")
-    formatter = logging.Formatter("[%(process)s:%(threadName)s](%(asctime)s) %(levelname)s - %(name)s - [%(filename)s:%(lineno)d] - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
 
 
 
@@ -202,6 +148,100 @@ def get_digits(value: float) -> int:
         return len(buf)
     else:
         return 0
+
+
+def _get_trader_dir(temp_name: str) -> Tuple[Path, Path]:
+    """
+    Get path where trader is running in.
+    """
+    cwd: Path = Path.cwd()
+    temp_path: Path = cwd.joinpath(temp_name)
+
+    # If .vntrader folder exists in current working directory,
+    # then use it as trader running path.
+    if temp_path.exists():
+        return cwd, temp_path
+
+    # Otherwise use home path of system.
+    home_path: Path = Path.home()
+    temp_path: Path = home_path.joinpath(temp_name)
+
+    # Create .vntrader folder under home path if not exist.
+    if not temp_path.exists():
+        temp_path.mkdir()
+
+    return home_path, temp_path
+
+
+TRADER_DIR, TEMP_DIR = _get_trader_dir(".vntrader")
+sys.path.append(str(TRADER_DIR))
+
+
+def get_file_path(filename: str) -> Path:
+    """
+    Get path for temp file with filename.
+    """
+    return TEMP_DIR.joinpath(filename)
+
+
+def get_folder_path(folder_name: str) -> Path:
+    """
+    Get path for temp folder with folder name.
+    """
+    folder_path: Path = TEMP_DIR.joinpath(folder_name)
+    if not folder_path.exists():
+        folder_path.mkdir()
+    return folder_path
+
+
+def get_plain_log_file(filename) -> Path:
+    """
+    Get path for plain log file.
+    """
+    filename = filename if filename.endswith(".log") else f"{filename}.log"
+    from .setting import SETTINGS  # pylint: disable=import-outside-toplevel
+    if SETTINGS.get("log.path", "") != "":
+        log_path = Path(SETTINGS["log.path"])
+        log_path.mkdir(exist_ok=True, parents=True)
+        return log_path.joinpath(filename)
+    return get_folder_path("log").joinpath(filename)
+
+
+def setup_plain_logger(logger_name: str, logger_level: int, logger_filename: str = None, stream: bool = False,
+                       formatter_str: str = "[%(process)s:%(threadName)s](%(asctime)s) %(levelname)s - %(name)s - [%(filename)s:%(lineno)d] - %(message)s") -> logging.Logger:
+    """
+    Setup plain logger to file.
+    """
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logger_level)
+
+    # Remove all existed handlers
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    parent_logger = logger.parent
+    while parent_logger:
+        for handler in parent_logger.handlers[:]:
+            parent_logger.removeHandler(handler)
+        parent_logger = parent_logger.parent
+
+    logger_filename = logger_filename or logger_name
+    # Create a file handler
+    handler = logging.FileHandler(get_plain_log_file(logger_filename), mode="a")
+
+    formatter = logging.Formatter(formatter_str)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    if stream:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
+
+    return logger
+
+
+logger = setup_plain_logger("utility", logging.INFO)
 
 
 class BarGenerator:
@@ -340,7 +380,7 @@ class BarGenerator:
         now_time = datetime.now(tz=ZoneInfo("Asia/Shanghai"))
 
         if abs((now_time - tick_time).total_seconds()) > 60:
-            logger.info(f"Tick timestamp too far from now: {now_time.isoformat()}, tick time: {tick_time.isoformat()}")
+            logger.debug(f"Tick timestamp too far from now: {now_time.isoformat()}, tick time: {tick_time.isoformat()}")
             return -1
         if not self.trade_time:
             logger.warning("No trading timerange provided!!!")
@@ -351,7 +391,7 @@ class BarGenerator:
                 return 1
             elif tick_time.hour == end.hour and tick_time.minute == end.minute and tick_time.second == end.second and tick_time.microsecond == end.microsecond:
                 return 2
-        logger.info(f"Tick not in trade time: {tick_time.isoformat()}")
+        logger.debug(f"Tick not in trade time: {tick_time.isoformat()}")
         return 0
 
     def update_bar_minute_window(self, bar: BarData, new_minute=True) -> None:
