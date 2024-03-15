@@ -158,9 +158,9 @@ class OrderData(BaseData):
         return req
 
     def __str__(self):
+        dt_str = "" if self.datetime is None else '@' + self.datetime.isoformat()
         return (
-            f"Order@{self.datetime.isoformat()}: {self.direction} {self.offset} {self.volume}@{self.price} "
-            f"traded:{self.traded} status:{self.status}"
+            f"Order{dt_str}: {self.direction} {self.offset} {self.volume}@{self.price} traded:{self.traded} status:{self.status}"
         )
 
 
@@ -189,7 +189,8 @@ class TradeData(BaseData):
         self.vt_tradeid: str = f"{self.gateway_name}.{self.tradeid}"
 
     def __str__(self):
-        return f"Trade@{self.datetime.isoformat()}: {self.direction} {self.offset} {self.volume}@{self.price}"
+        dt_str = "" if self.datetime is None else '@' + self.datetime.isoformat()
+        return f"Trade{dt_str}: {self.direction} {self.offset} {self.volume}@{self.price}"
 
 
 @dataclass
