@@ -160,7 +160,7 @@ class OrderData(BaseData):
     def __str__(self):
         dt_str = "" if self.datetime is None else '@' + self.datetime.isoformat()
         return (
-            f"Order{dt_str}: {self.direction} {self.offset} {self.volume}@{self.price} traded:{self.traded} status:{self.status}"
+            f"Order({self.vt_symbol}){dt_str}: {self.direction} {self.offset} {self.volume}@{self.price} traded:{self.traded} status:{self.status}"
         )
 
 
@@ -190,7 +190,7 @@ class TradeData(BaseData):
 
     def __str__(self):
         dt_str = "" if self.datetime is None else '@' + self.datetime.isoformat()
-        return f"Trade{dt_str}: {self.direction} {self.offset} {self.volume}@{self.price}"
+        return f"Trade({self.vt_symbol})@{dt_str}: {self.direction} {self.offset} {self.volume}@{self.price}"
 
 
 @dataclass

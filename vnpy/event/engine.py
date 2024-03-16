@@ -9,11 +9,12 @@ from time import sleep
 from typing import Any, Callable, List
 from ..trader.object import TickData
 from ..trader.utility import setup_plain_logger
-from datetime import datetime
+
 
 EVENT_TIMER = "eTimer"
 
 logger = setup_plain_logger(__name__, logging.INFO, "event.log")
+
 
 class Event:
     """
@@ -62,10 +63,8 @@ class EventEngine:
         while self._active:
             try:
                 event: Event = self._queue.get(block=True, timeout=1)
-                #ts = time_ns()
                 self._process(event)
             except Empty:
-                # logger.info(f"Event Queue empty. Thread ID: {get_ident()}")
                 pass
 
     def _process(self, event: Event) -> None:
@@ -113,9 +112,6 @@ class EventEngine:
         """
         Put an event object into event queue.
         """
-        if event.type == 'eTick.':
-            tick: TickData = event.data
-            print(f"put in event queue [{tick.vt_symbol}] {datetime.now().isoformat()}, {tick.datetime.isoformat()}")
         self._queue.put(event)
 
     def register(self, etype: str, handler: HandlerType) -> None:

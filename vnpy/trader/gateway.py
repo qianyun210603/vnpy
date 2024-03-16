@@ -32,6 +32,7 @@ from .object import (
 )
 
 
+
 class BaseGateway(ABC):
     """
     Abstract gateway class for creating gateways connection
@@ -41,7 +42,7 @@ class BaseGateway(ABC):
 
     ---
     ## Basics
-    A gateway should satisfies:
+    A gateway should satisfy:
     * this class should be thread-safe:
         * all methods should be thread-safe
         * no mutable shared properties between objects.

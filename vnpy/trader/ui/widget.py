@@ -38,8 +38,6 @@ from ..utility import load_json, save_json, get_digits, ZoneInfo, encryptor
 from ..setting import SETTING_FILENAME, SETTINGS
 
 
-
-
 COLOR_LONG = QtGui.QColor("red")
 COLOR_SHORT = QtGui.QColor("green")
 COLOR_BID = QtGui.QColor(255, 174, 201)
@@ -631,7 +629,7 @@ class ConnectDialog(QtWidgets.QDialog):
                     try:
                         field_value = encryptor.decrypt(field_value)
                     except Exception:
-                        saved_value = ""
+                        field_value = ""
 
             widget.setText(str(field_value))
             if isinstance(field_value, int):

@@ -278,7 +278,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """ """
         webbrowser.open("https://www.vnpy.com/forum/")
 
-
     def edit_global_setting(self) -> None:
         """ """
         dialog: GlobalDialog = GlobalDialog(parent=self)

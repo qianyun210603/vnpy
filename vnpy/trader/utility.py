@@ -2,12 +2,13 @@
 General utility functions.
 """
 
+from enum import Enum
 import json
 import warnings
 import logging
 import keyring
 import sys
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Callable, Dict, Tuple, Union, Optional, Sequence
 from decimal import Decimal
@@ -248,6 +249,92 @@ def setup_plain_logger(
 logger = setup_plain_logger("utility", logging.INFO)
 
 
+class IntraDayTradingTime:
+
+    class TimeInRange(Enum):
+        OUT_OF_RANGE = 0
+        IN_RANGE = 1
+        AT_RANGE_END = 2
+
+    def __init__(
+        self,
+        sessions: Sequence[Tuple[time, time]],
+        offset: Union[float, timedelta],
+        break_threshold_for_offest: Union[float, timedelta] = timedelta(hours=1),
+    ) -> None:
+        """"""
+        self.sessions = sorted(sessions, key=lambda x: x[1])
+        self._validate_sessions(self.sessions)
+        self.sessions_with_offset = self._cal_sessions_with_offset(offset, break_threshold_for_offest)
+        self._validate_sessions(self.sessions_with_offset)
+
+    @staticmethod
+    def _validate_sessions(sessions: Sequence[Tuple[time, time]]) -> None:
+        """"""
+        num_sessions = len(sessions)
+        for i in range(num_sessions):
+            start, end = sessions[i]
+            if not isinstance(start, time) or not isinstance(end, time):
+                raise ValueError(f"Invalid session format: {start}-{end}")
+            if start == end:
+                raise ValueError(f"Empty session: {start}-{end}")
+        for i in range(num_sessions - 1):
+            if sessions[i][1] > sessions[i + 1][0]:
+                raise ValueError(f"Overlapping sessions: {sessions[i]}-{sessions[i + 1]}")
+
+    def _cal_sessions_with_offset(
+        self, offset: Union[float, timedelta], break_threshold_for_offest: Union[float, timedelta]
+    ) -> Sequence[Tuple[time, time]]:
+        """"""
+        sessions_with_offset = []
+        num_sessions = len(self.sessions)
+        if isinstance(offset, (int, float)):
+            offset = timedelta(seconds=offset)
+        if isinstance(break_threshold_for_offest, (int, float)):
+            break_threshold_for_offest = timedelta(seconds=break_threshold_for_offest)
+        for i, (start, end) in enumerate(self.sessions):
+            dt_start = datetime.combine(datetime.today(), start)
+            dt_end = datetime.combine(datetime.today(), end)
+            previous_end = datetime.combine(datetime.today(), self.sessions[(i - 1) % num_sessions][1])
+            next_start = datetime.combine(datetime.today(), self.sessions[(i + 1) % num_sessions][0])
+            if dt_start - previous_end > break_threshold_for_offest:
+                dt_start += offset
+            if next_start - dt_end > break_threshold_for_offest:
+                dt_end -= offset
+            sessions_with_offset.append((dt_start.time(), dt_end.time()))
+
+        return sessions_with_offset
+
+    def trading_time_in_session(self, dt: datetime) -> TimeInRange:
+        """"""
+        for start, end in self.sessions:
+            if start <= dt.time() < end or start > end and (dt.time() >= start or dt.time() < end):
+                return self.TimeInRange.IN_RANGE
+            elif (
+                dt.hour == end.hour
+                and dt.minute == end.minute
+                and dt.second == end.second
+                and dt.microsecond == end.microsecond
+            ):
+                return self.TimeInRange.AT_RANGE_END
+
+        return self.TimeInRange.OUT_OF_RANGE
+
+    def trading_time_in_session_with_offset(self, dt: datetime) -> TimeInRange:
+        """"""
+        for start, end in self.sessions_with_offset:
+            if start <= dt.time() < end or start > end and (dt.time() >= start or dt.time() < end):
+                return self.TimeInRange.IN_RANGE
+            elif (
+                dt.hour == end.hour
+                and dt.minute == end.minute
+                and dt.second == end.second
+                and dt.microsecond == end.microsecond
+            ):
+                return self.TimeInRange.AT_RANGE_END
+        return self.TimeInRange.OUT_OF_RANGE
+
+
 class BarGenerator:
     """
     For:
@@ -265,7 +352,7 @@ class BarGenerator:
         on_window_bar: Callable = None,
         interval: Interval = Interval.MINUTE,
         daily_end: time = None,
-        trade_time: Sequence[Tuple[time, time]] = None,
+        trade_time: Optional[IntraDayTradingTime] = None,
     ) -> None:
         """Constructor"""
         self.bar: Optional[BarData] = None
@@ -289,7 +376,7 @@ class BarGenerator:
         if self.interval == Interval.DAILY and not self.daily_end:
             raise RuntimeError("合成日K线必须传入每日收盘时间")
 
-        self.trade_time: Sequence[Tuple[time, time]] = trade_time
+        self.trade_time: Optional[IntraDayTradingTime] = trade_time
 
     def update_tick(self, tick: TickData) -> None:
         """
@@ -390,18 +477,7 @@ class BarGenerator:
             logger.warning("No trading timerange provided!!!")
             return 1
 
-        for start, end in self.trade_time:
-            if start <= tick_time.time() < end:
-                return 1
-            elif (
-                tick_time.hour == end.hour
-                and tick_time.minute == end.minute
-                and tick_time.second == end.second
-                and tick_time.microsecond == end.microsecond
-            ):
-                return 2
-        logger.debug(f"Tick not in trade time: {tick_time.isoformat()}")
-        return 0
+        return self.trade_time.trading_time_in_session(tick_time).value
 
     def update_bar_minute_window(self, bar: BarData, new_minute=True) -> None:
         """"""
