@@ -158,10 +158,8 @@ class OrderData(BaseData):
         return req
 
     def __str__(self):
-        dt_str = "" if self.datetime is None else '@' + self.datetime.isoformat()
-        return (
-            f"Order({self.vt_symbol}){dt_str}: {self.direction} {self.offset} {self.volume}@{self.price} traded:{self.traded} status:{self.status}"
-        )
+        dt_str = "" if self.datetime is None else "@" + self.datetime.isoformat()
+        return f"Order({self.vt_symbol}){dt_str}: {self.direction} {self.offset} {self.volume}@{self.price} traded:{self.traded} status:{self.status}"
 
 
 @dataclass
@@ -189,7 +187,7 @@ class TradeData(BaseData):
         self.vt_tradeid: str = f"{self.gateway_name}.{self.tradeid}"
 
     def __str__(self):
-        dt_str = "" if self.datetime is None else '@' + self.datetime.isoformat()
+        dt_str = "" if self.datetime is None else "@" + self.datetime.isoformat()
         return f"Trade({self.vt_symbol})@{dt_str}: {self.direction} {self.offset} {self.volume}@{self.price}"
 
 
@@ -440,3 +438,77 @@ class QuoteRequest:
             gateway_name=gateway_name,
         )
         return quote
+
+
+@dataclass
+class Commission(BaseData):
+    """
+    Margin rate data for the contract .
+    """
+
+    symbol: str
+    exchange: Exchange = Exchange.UNKNOWN  # 可能有空
+    ratio_bymoney: float = 0.0  # 手续费率，如区分开平仓则为开仓手续费率
+    ratio_byvolume: float = 0.0  # 手续费率，如区分开平仓则为开仓手续费率
+    close_ratio_bymoney: float = 0.0  # 平仓手续费率，如不区分，则设为0
+    close_ratio_byvolume: float = 0.0  # 平仓手续费，如不区分，则设为0
+    close_today_ratio_bymoney: float = 0.0  # 平今手续费率，如不区分，则设为0
+    close_today_ratio_byvolume: float = 0.0  # 平今手续费，如不区分，则设为0
+
+    def __post_init__(self):
+        """"""
+        self.vt_symbol = f"{self.symbol}.{self.exchange}"
+
+    def get_all_commission_senarios(self, price, size=1.0):
+        money = price * size
+        base_scenario = {"开": money * self.ratio_bymoney + self.ratio_byvolume}
+        if self.close_ratio_bymoney < 1e-10 and self.close_ratio_byvolume < 1e-10:
+            base_scenario["平"] = money * self.ratio_bymoney + self.ratio_byvolume
+        else:
+            base_scenario["平"] = money * self.close_ratio_bymoney + self.close_ratio_byvolume
+        if self.close_today_ratio_bymoney > 1e-10 and self.close_today_ratio_byvolume > 1e-10:
+            base_scenario["平今"] = money * self.close_today_ratio_bymoney + self.close_today_ratio_byvolume
+        return base_scenario
+
+    def __call__(self, price: float, Offset: Offset = Offset.NONE, size: float = 1.0, is_today: bool = False):
+        """
+        计算手续费
+        """
+        if Offset == Offset.CLOSE:
+            if is_today:
+                return price * size * self.close_today_ratio_bymoney + self.close_today_ratio_byvolume
+            return price * size * self.close_ratio_bymoney + self.close_ratio_byvolume
+        return price * size * self.ratio_bymoney + self.ratio_byvolume
+
+
+@dataclass
+class MarginRate(BaseData):
+    """
+    Margin rate data for the contract .
+    """
+
+    symbol: str
+    exchange: Exchange = Exchange.UNKNOWN  # 可能有空
+    long_margin_rate: float = 0.1  # 多头保证金率
+    long_margin_perlot: float = 0.0  # 多头每手保证金
+    short_margin_rate: float = 0.1  # 空头保证金率
+    short_margin_perlot: float = 0.0  # 空头每手保证金
+
+    def __post_init__(self):
+        """"""
+        self.vt_symbol = f"{self.symbol}.{self.exchange}"
+
+    def get_all_margin_senarios(self, price, size=1.0):
+        base_scenario = {
+            "多": price * size * self.long_margin_rate + self.long_margin_perlot,
+            "空": price * size * self.short_margin_rate + self.short_margin_perlot,
+        }
+        return base_scenario
+
+    def __call__(self, price: float, direction: Direction, size: float = 1.0):
+        """
+        计算保证金
+        """
+        if direction == Direction.LONG:
+            return price * size * self.long_margin_rate + self.long_margin_perlot
+        return price * size * self.short_margin_rate + self.short_margin_perlot

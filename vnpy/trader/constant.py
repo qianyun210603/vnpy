@@ -158,6 +158,7 @@ class Exchange(VNBaseEnum):
 
     # Special Function
     LOCAL = "LOCAL"  # For local generated data
+    UNKNOWN = "UNKNOWN"
 
 
 class Currency(VNBaseEnum):
