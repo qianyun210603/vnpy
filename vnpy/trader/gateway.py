@@ -12,6 +12,8 @@ from .event import (
     EVENT_CONTRACT,
     EVENT_LOG,
     EVENT_QUOTE,
+    EVENT_MARGINRATE,
+    EVENT_COMMISION,
 )
 from .object import (
     TickData,
@@ -28,7 +30,9 @@ from .object import (
     HistoryRequest,
     QuoteRequest,
     Exchange,
-    BarData
+    BarData,
+    MarginRate,
+    Commission,
 )
 
 
@@ -152,6 +156,12 @@ class BaseGateway(ABC):
         """
         self.on_event(EVENT_CONTRACT, contract)
 
+    def on_margin_rate(self, margin: MarginRate) -> None:
+        self.on_event(EVENT_MARGINRATE, margin)
+
+    def on_commission(self, commission: Commission):
+        self.on_event(EVENT_COMMISION, commission)
+
     def write_log(self, msg: str) -> None:
         """
         Write a log event from gateway.
@@ -258,6 +268,16 @@ class BaseGateway(ABC):
         Query bar history data.
         """
 
+    def query_margin(self, req: SubscribeRequest) -> None:
+        """
+        Query margin requirement of instrument
+        """
+
+    def query_commission(self, req: SubscribeRequest) -> None:
+        """
+        Query commission rate of instrument
+        """
+
     def get_default_setting(self) -> Dict[str, Any]:
         """
         Return default setting dict.
@@ -277,7 +297,7 @@ class LocalOrderManager:
         # For generating local orderid
         self.order_prefix: str = order_prefix
         self.order_count: int = 0
-        self.orders: Dict[str, OrderData] = {}        # local_orderid: order
+        self.orders: Dict[str, OrderData] = {}  # local_orderid: order
 
         # Map between local and system orderid
         self.local_sys_orderid_map: Dict[str, str] = {}
@@ -290,7 +310,7 @@ class LocalOrderManager:
         self.push_data_callback: Callable = None
 
         # Cancel request buf
-        self.cancel_request_buf: Dict[str, CancelRequest] = {}    # local_orderid: req
+        self.cancel_request_buf: Dict[str, CancelRequest] = {}  # local_orderid: req
 
         # Hook cancel order function
         self._cancel_order: Callable = gateway.cancel_order
