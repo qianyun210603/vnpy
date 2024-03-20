@@ -32,7 +32,6 @@ from .object import (
 )
 
 
-
 class BaseGateway(ABC):
     """
     Abstract gateway class for creating gateways connection
