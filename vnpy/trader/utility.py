@@ -297,6 +297,10 @@ class IntraDayTradingTime:
             dt_end = datetime.combine(datetime.today(), end)
             previous_end = datetime.combine(datetime.today(), self.sessions[(i - 1) % num_sessions][1])
             next_start = datetime.combine(datetime.today(), self.sessions[(i + 1) % num_sessions][0])
+            if previous_end > dt_start:
+                previous_end -= timedelta(days=1)
+            if next_start < dt_end:
+                next_start += timedelta(days=1)
             if dt_start - previous_end > break_threshold_for_offest:
                 dt_start += offset
             if next_start - dt_end > break_threshold_for_offest:
