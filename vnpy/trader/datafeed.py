@@ -5,6 +5,7 @@ from importlib import import_module
 
 from .object import HistoryRequest, TickData, BarData
 from .setting import SETTINGS
+from .locale import _
 
 
 class BaseDatafeed(ABC):
@@ -23,7 +24,7 @@ class BaseDatafeed(ABC):
         """
         Query history bar data.
         """
-        output("查询K线数据失败：没有正确配置数据服务")
+        output(_("查询K线数据失败：没有正确配置数据服务"))
         return None  # pylint: disable=R1711
 
     def query_tick_history(  # pylint: disable=useless-return
@@ -32,7 +33,7 @@ class BaseDatafeed(ABC):
         """
         Query history tick data.
         """
-        output("查询Tick数据失败：没有正确配置数据服务")
+        output(_("查询Tick数据失败：没有正确配置数据服务"))
         return None
 
 
@@ -52,7 +53,7 @@ def get_datafeed() -> BaseDatafeed:
     if not datafeed_name:
         datafeed = BaseDatafeed()
 
-        print("没有配置要使用的数据服务，请修改全局配置中的datafeed相关内容")
+        print(_("没有配置要使用的数据服务，请修改全局配置中的datafeed相关内容"))
     else:
         module_name: str = f"vnpy_{datafeed_name}"
 
@@ -66,6 +67,6 @@ def get_datafeed() -> BaseDatafeed:
         except ModuleNotFoundError:
             datafeed = BaseDatafeed()
 
-            print(f"无法加载数据服务模块，请运行 pip install {module_name} 尝试安装")
+            print(_("无法加载数据服务模块，请运行 pip install {} 尝试安装").format(module_name))
 
     return datafeed
