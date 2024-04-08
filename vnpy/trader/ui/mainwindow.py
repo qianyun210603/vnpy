@@ -17,7 +17,7 @@ from ..utility import TRADER_DIR, get_icon_path
 from .qt import QtCore, QtGui, QtWidgets
 from .widget import (AboutDialog, AccountMonitor, ActiveOrderMonitor, BaseMonitor, ConnectDialog, ContractManager,
                      GlobalDialog, LogMonitor, OrderMonitor, PositionMonitor, TickMonitor, TradeMonitor, TradingWidget)
-from locale import _
+from ..locale import _
 
 
 class MainWindow(QtWidgets.QMainWindow):
