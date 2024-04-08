@@ -36,6 +36,6 @@ _templates
 
 # Misc
 .DS_Store
-
+*.mo
 
 *.log

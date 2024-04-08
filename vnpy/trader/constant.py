@@ -4,6 +4,8 @@ General constant enums used in the trading platform.
 
 from enum import Enum
 
+from .locale import _
+
 
 class VNBaseEnum(Enum):
 
@@ -16,9 +18,9 @@ class Direction(VNBaseEnum):
     Direction of order/trade/position.
     """
 
-    LONG = "多"
-    SHORT = "空"
-    NET = "净"
+    LONG = _("多")
+    SHORT = _("空")
+    NET = _("净")
 
     def opposite(self):
         if self == Direction.LONG:
@@ -34,10 +36,10 @@ class Offset(VNBaseEnum):
     """
 
     NONE = ""
-    OPEN = "开"
-    CLOSE = "平"
-    CLOSETODAY = "平今"
-    CLOSEYESTERDAY = "平昨"
+    OPEN = _("开")
+    CLOSE = _("平")
+    CLOSETODAY = _("平今")
+    CLOSEYESTERDAY = _("平昨")
 
 
 class Status(VNBaseEnum):
@@ -45,12 +47,12 @@ class Status(VNBaseEnum):
     Order status.
     """
 
-    SUBMITTING = "提交中"
-    NOTTRADED = "未成交"
-    PARTTRADED = "部分成交"
-    ALLTRADED = "全部成交"
-    CANCELLED = "已撤销"
-    REJECTED = "拒单"
+    SUBMITTING = _("提交中")
+    NOTTRADED = _("未成交")
+    PARTTRADED = _("部分成交")
+    ALLTRADED = _("全部成交")
+    CANCELLED = _("已撤销")
+    REJECTED = _("拒单")
 
     def is_active(self):
         return self in [Status.SUBMITTING, Status.NOTTRADED, Status.PARTTRADED]
@@ -61,17 +63,19 @@ class Product(VNBaseEnum):
     Product class.
     """
 
-    EQUITY = "股票"
-    FUTURES = "期货"
-    OPTION = "期权"
-    INDEX = "指数"
-    FOREX = "外汇"
-    SPOT = "现货"
+    EQUITY = _("股票")
+    FUTURES = _("期货")
+    OPTION = _("期权")
+    INDEX = _("指数")
+    FOREX = _("外汇")
+    SPOT = _("现货")
     ETF = "ETF"
-    BOND = "债券"
-    WARRANT = "权证"
-    SPREAD = "价差"
-    FUND = "基金"
+    BOND = _("债券")
+    WARRANT = _("权证")
+    SPREAD = _("价差")
+    FUND = _("基金")
+    CFD = "CFD"
+    SWAP = _("互换")
 
 
 class OrderType(VNBaseEnum):
@@ -79,12 +83,12 @@ class OrderType(VNBaseEnum):
     Order type.
     """
 
-    LIMIT = "限价"
-    MARKET = "市价"
+    LIMIT = _("限价")
+    MARKET = _("市价")
     STOP = "STOP"
     FAK = "FAK"
     FOK = "FOK"
-    RFQ = "询价"
+    RFQ = _("询价")
 
 
 class OptionType(VNBaseEnum):
@@ -92,8 +96,8 @@ class OptionType(VNBaseEnum):
     Option type.
     """
 
-    CALL = "看涨期权"
-    PUT = "看跌期权"
+    CALL = _("看涨期权")
+    PUT = _("看跌期权")
 
 
 class Exchange(VNBaseEnum):
@@ -165,7 +169,6 @@ class Currency(VNBaseEnum):
     """
     Currency.
     """
-
     USD = "USD"
     HKD = "HKD"
     CNY = "CNY"

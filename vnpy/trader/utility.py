@@ -20,6 +20,7 @@ import talib
 
 from .object import BarData, TickData
 from .constant import Exchange, Interval
+from .locale import _
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo  # noqa # pylint: disable=unused-import,no-name-in-module
@@ -59,7 +60,7 @@ def extract_vt_symbol(vt_symbol: str) -> Tuple[str, Exchange]:
     """
     :return: (symbol, exchange)
     """
-    symbol, exchange_str = vt_symbol.split(".")
+    symbol, exchange_str = vt_symbol.rsplit(".", 1)
     return symbol, Exchange(exchange_str)
 
 
@@ -378,7 +379,7 @@ class BarGenerator:
 
         self.daily_end: time = daily_end
         if self.interval == Interval.DAILY and not self.daily_end:
-            raise RuntimeError("合成日K线必须传入每日收盘时间")
+            raise RuntimeError(_("合成日K线必须传入每日收盘时间"))
 
         self.trade_time: Optional[IntraDayTradingTime] = trade_time
 
