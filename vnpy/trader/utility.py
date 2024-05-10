@@ -6,6 +6,7 @@ from enum import Enum
 import json
 import warnings
 import logging
+import logging.handlers
 import keyring
 import sys
 from datetime import datetime, time, timedelta
@@ -95,13 +96,25 @@ def load_json(filename: str) -> dict:
         return {}
 
 
+# Extend the JSONEncoder class
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
+
+
 def save_json(filename: str, data: dict) -> None:
     """
     Save data into json file in temp path.
     """
     filepath: Path = get_file_path(filename)
     with open(filepath, mode="w+", encoding="UTF-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+        json.dump(data, f, indent=4, ensure_ascii=False, cls=NpEncoder)
 
 
 def round_to(value: float, target: float) -> float:
@@ -214,6 +227,8 @@ def setup_plain_logger(
     logger_filename: str = None,
     stream: bool = False,
     formatter_str: str = "[%(process)s:%(threadName)s](%(asctime)s) %(levelname)s - %(name)s - [%(filename)s:%(lineno)d] - %(message)s",
+    max_bytes: int = 0,
+    backup_count: int = 3,
 ) -> logging.Logger:
     """
     Setup plain logger to file.
@@ -233,7 +248,12 @@ def setup_plain_logger(
 
     logger_filename = logger_filename or logger_name
     # Create a file handler
-    handler = logging.FileHandler(get_plain_log_file(logger_filename), mode="a")
+    if max_bytes > 0:
+        handler = logging.handlers.RotatingFileHandler(
+            get_plain_log_file(logger_filename), maxBytes=max_bytes, backupCount=backup_count
+        )
+    else:
+        handler = logging.FileHandler(get_plain_log_file(logger_filename), mode="a")
 
     formatter = logging.Formatter(formatter_str)
     handler.setFormatter(formatter)
