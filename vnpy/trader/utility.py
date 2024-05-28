@@ -280,13 +280,14 @@ class IntraDayTradingTime:
     def __init__(
         self,
         sessions: Sequence[Tuple[time, time]],
-        offset: Union[float, timedelta],
+        start_offset: Union[Union[float, timedelta], Sequence[Union[float, timedelta]]] = 0,
+        end_offset: Union[Union[float, timedelta], Sequence[Union[float, timedelta]]] = 0,
         break_threshold_for_offest: Union[float, timedelta] = timedelta(hours=1),
     ) -> None:
         """"""
         self.sessions = sorted(sessions, key=lambda x: x[1])
         self._validate_sessions(self.sessions)
-        self.sessions_with_offset = self._cal_sessions_with_offset(offset, break_threshold_for_offest)
+        self.sessions_with_offset = self._cal_sessions_with_offset(start_offset, end_offset, break_threshold_for_offest)
         self._validate_sessions(self.sessions_with_offset)
 
     @staticmethod
@@ -304,13 +305,28 @@ class IntraDayTradingTime:
                 raise ValueError(f"Overlapping sessions: {sessions[i]}-{sessions[i + 1]}")
 
     def _cal_sessions_with_offset(
-        self, offset: Union[float, timedelta], break_threshold_for_offest: Union[float, timedelta]
+        self,         start_offset: Union[Union[float, timedelta], Sequence[Union[float, timedelta]]],
+        end_offset: Union[Union[float, timedelta], Sequence[Union[float, timedelta]]], break_threshold_for_offest: Union[float, timedelta]
     ) -> Sequence[Tuple[time, time]]:
         """"""
         sessions_with_offset = []
         num_sessions = len(self.sessions)
-        if isinstance(offset, (int, float)):
-            offset = timedelta(seconds=offset)
+
+        def process_offset(offset):
+
+            if isinstance(offset, (int, float)):
+                offset = timedelta(seconds=offset)
+            if isinstance(offset, (list, tuple)):
+                if len(offset) != num_sessions:
+                    raise ValueError("Length of offset must be equal to the number of sessions")
+                offset = [timedelta(seconds=o) if isinstance(o, (int, float)) else o for o in offset]
+            else:
+                offset = [offset] * num_sessions
+            return offset
+
+        start_offset = process_offset(start_offset)
+        end_offset = process_offset(end_offset)
+
         if isinstance(break_threshold_for_offest, (int, float)):
             break_threshold_for_offest = timedelta(seconds=break_threshold_for_offest)
         for i, (start, end) in enumerate(self.sessions):
@@ -323,9 +339,9 @@ class IntraDayTradingTime:
             if next_start < dt_end:
                 next_start += timedelta(days=1)
             if dt_start - previous_end > break_threshold_for_offest:
-                dt_start += offset
+                dt_start += start_offset[i]
             if next_start - dt_end > break_threshold_for_offest:
-                dt_end -= offset
+                dt_end -= end_offset[i]
             sessions_with_offset.append((dt_start.time(), dt_end.time()))
 
         return sessions_with_offset

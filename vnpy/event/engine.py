@@ -133,7 +133,7 @@ class EventEngine:
             handler_list.remove(handler)
 
         if not handler_list:
-            self._handlers.pop(type)
+            self._handlers.pop(etype)
 
     def register_general(self, handler: HandlerType) -> None:
         """
