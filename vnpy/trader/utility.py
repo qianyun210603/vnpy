@@ -458,6 +458,8 @@ class BarGenerator:
                 high_price=tick.last_price,
                 low_price=tick.last_price,
                 close_price=tick.last_price,
+                volume=tick.last_volume,
+                turnover=max(0.0, tick.turnover - self.last_tick.turnover) if self.last_tick else tick.turnover,
                 open_interest=tick.open_interest,
             )
             self.pending_trade_in_current_bar = self.last_tick is not None and tick.volume == self.last_tick.volume
@@ -482,14 +484,11 @@ class BarGenerator:
             if self.last_tick is None or self.last_tick.low_price > tick.low_price:
                 self.bar.low_price = tick.low_price
 
+            self.bar.volume += tick.last_volume
+            self.bar.turnover += max(0.0, tick.turnover - self.last_tick.turnover) if self.last_tick else tick.turnover
+
+
         self.update_bar_minute_window(self.bar, new_minute)
-
-        if self.last_tick:
-            volume_change: float = tick.volume - self.last_tick.volume
-            self.bar.volume += max(volume_change, 0)
-
-            turnover_change: float = tick.turnover - self.last_tick.turnover
-            self.bar.turnover += max(turnover_change, 0)
 
         self.last_tick = tick
 
