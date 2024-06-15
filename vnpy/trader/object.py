@@ -474,8 +474,8 @@ class Commission(BaseData):
         """
         计算手续费
         """
-        if Offset == Offset.CLOSE:
-            if is_today:
+        if Offset == Offset.CLOSE and (self.close_ratio_bymoney > 1e-10 or self.close_ratio_byvolume > 1e-10):
+            if is_today and (self.close_today_ratio_bymoney > 1e-10 or self.close_today_ratio_byvolume > 1e-10):
                 return price * size * self.close_today_ratio_bymoney + self.close_today_ratio_byvolume
             return price * size * self.close_ratio_bymoney + self.close_ratio_byvolume
         return price * size * self.ratio_bymoney + self.ratio_byvolume
